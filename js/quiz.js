@@ -1,6 +1,8 @@
-// Quiz engine: Explore / Quiz / Test modes, scoring, missed-street retry, and
-// the exclusion manager. Data (street names, default exclusions, confusion
-// groups) and the rendered SVG are injected, so this engine is map-agnostic.
+// Quiz engine: Explore and Test modes, scoring, missed-street retry, and the
+// exclusion manager. Test has two toggles: selection (random vs click-to-pick)
+// and answer method (dropdown vs typing). Data (street names, default
+// exclusions, confusion groups) and the rendered SVG are injected, so this
+// engine is map-agnostic.
 
 export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
   const STREET_NAMES = district.streets;
@@ -14,7 +16,10 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
   const userExcluded = new Set(initial.userExcluded || []);
 
   // --- State ---
-  let mode = 'explore';
+  let mode = 'explore';          // 'explore' | 'test'
+  let selection = 'random';      // 'random' | 'click' (Test only)
+  let answerMethod = 'dropdown'; // 'dropdown' | 'type' (Test only)
+  let currentKind = null;        // 'random' | 'retry' | 'click' — the live question's kind
   let target = null;
   let correct = initial.correct || 0;
   let total = initial.total || 0;
@@ -47,33 +52,89 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     });
   }
 
+  // Prompt text for a question, by kind and current answer method.
+  function promptFor(kind) {
+    const dd = answerMethod === 'dropdown';
+    if (kind === 'retry') return dd ? 'Retry: Pick the name of this red street.' : 'Retry: Type the name of this red street.';
+    if (kind === 'click') return dd ? 'Pick the name of this street.' : 'Type the name of this street.';
+    return dd
+      ? 'Pick the name of the highlighted street from the dropdown. Tapping the map = "I don\'t know".'
+      : 'Type the name of the highlighted street. Tapping the map = "I don\'t know".';
+  }
+
+  // Set up the UI for a question on `name`. Used by every selection path
+  // (random pick, click-to-pick, red-street retry) and by the answer toggle.
+  function presentQuestion(name, kind) {
+    currentKind = kind;
+    target = name;
+    streetEls[name].classList.add('target');
+    if (useMissedPool) streetEls[name].classList.add('retry-highlight');
+    mapView.panToStreet(streetEls[name]);
+    dom.inputRow.style.display = 'flex';
+    if (answerMethod === 'dropdown') {
+      setupDropdown(name);
+      dom.dropdown.style.display = '';
+      dom.textbox.style.display = 'none';
+    } else {
+      dom.dropdown.style.display = 'none';
+      dom.textbox.style.display = '';
+      dom.textbox.value = '';
+      dom.textbox.focus();
+    }
+    showPrompt(promptFor(kind));
+    showFeedback('');
+  }
+
+  // Click selection: user picked the street to be quizzed on (no penalty for
+  // switching streets mid-question). Keeps prior correct/wrong marks.
+  function askStreet(name) {
+    clearAllMarks();
+    presentQuestion(name, 'click');
+  }
+
+  // What to do after a question is answered/abandoned.
+  function advance() {
+    if (selection === 'random') {
+      nextQuestion();
+    } else {
+      target = null;
+      clearAllMarks();
+      showPrompt('Click any street to be quizzed on it.');
+    }
+  }
+
   function handleStreetClick(name) {
     if (mode === 'explore') {
       showFeedback(name, 'info');
       flashHover(name);
-    } else if (mode === 'quiz' || mode === 'test') {
-      // Tapping a wrong (red) street retries it.
-      if (streetEls[name] && streetEls[name].classList.contains('wrong')) {
-        retryRedStreet(name);
-        return;
-      }
-      if (!target) {
-        showFeedback('Press "New" to start a question.', 'info');
-        return;
-      }
-      // Clicking the map during quiz/test = "I don't know" — stays red for retry.
-      total++;
-      missed.add(target);
-      streetEls[target].classList.remove('target');
-      streetEls[target].classList.add('wrong');
-      const msg = (name === target)
-        ? `Didn't know. Tap the red street to retry. Answer: ${target}.`
-        : `Didn't know. Answer: ${target}. Tap red streets to retry them.`;
-      showFeedback(msg, 'bad');
-      updateScore();
-      save();
-      setTimeout(() => { target = null; nextQuestion(); }, 1800);
+      return;
     }
+    if (mode !== 'test') return;
+    // Tapping a wrong (red) street retries it (both selection modes).
+    if (streetEls[name] && streetEls[name].classList.contains('wrong')) {
+      retryRedStreet(name);
+      return;
+    }
+    if (selection === 'click') {
+      askStreet(name);
+      return;
+    }
+    // Random selection: clicking the map = "I don't know" — stays red for retry.
+    if (!target) {
+      showFeedback('Press "New" to start a question.', 'info');
+      return;
+    }
+    total++;
+    missed.add(target);
+    streetEls[target].classList.remove('target');
+    streetEls[target].classList.add('wrong');
+    const msg = (name === target)
+      ? `Didn't know. Tap the red street to retry. Answer: ${target}.`
+      : `Didn't know. Answer: ${target}. Tap red streets to retry them.`;
+    showFeedback(msg, 'bad');
+    updateScore();
+    save();
+    setTimeout(() => { target = null; advance(); }, 1800);
   }
 
   function retryRedStreet(name) {
@@ -81,24 +142,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
       asked.delete(target);
       streetEls[target] && streetEls[target].classList.remove('target');
     }
-    target = name;
-    streetEls[name].classList.add('target');
-    mapView.panToStreet(streetEls[name]);
-    if (mode === 'quiz') {
-      setupDropdown(name);
-      dom.inputRow.style.display = 'flex';
-      dom.dropdown.style.display = '';
-      dom.textbox.style.display = 'none';
-      showPrompt('Retry: Pick the name of this red street.');
-    } else if (mode === 'test') {
-      dom.inputRow.style.display = 'flex';
-      dom.dropdown.style.display = 'none';
-      dom.textbox.style.display = '';
-      dom.textbox.value = '';
-      dom.textbox.focus();
-      showPrompt('Retry: Type the name of this red street.');
-    }
-    showFeedback('');
+    presentQuestion(name, 'retry');
   }
 
   function flashHover(name) {
@@ -130,26 +174,9 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
       target = null;
       return;
     }
-    target = pool[Math.floor(Math.random() * pool.length)];
-    asked.add(target);
-    if (mode === 'quiz') {
-      setupDropdown(target);
-      dom.inputRow.style.display = 'flex';
-      dom.dropdown.style.display = '';
-      dom.textbox.style.display = 'none';
-      showPrompt('Pick the name of the highlighted street from the dropdown. Tapping the map = "I don\'t know".');
-    } else if (mode === 'test') {
-      dom.inputRow.style.display = 'flex';
-      dom.dropdown.style.display = 'none';
-      dom.textbox.style.display = '';
-      dom.textbox.value = '';
-      dom.textbox.focus();
-      showPrompt('Type the name of the highlighted street. Tapping the map = "I don\'t know".');
-    }
-    streetEls[target].classList.add('target');
-    if (useMissedPool) streetEls[target].classList.add('retry-highlight');
-    mapView.panToStreet(streetEls[target]);
-    showFeedback('');
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    asked.add(pick);
+    presentQuestion(pick, 'random');
   }
 
   function setupDropdown(answer) {
@@ -197,7 +224,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     updateScore();
     save();
     target = null;
-    setTimeout(nextQuestion, 900);
+    setTimeout(advance, 900);
   }
 
   function markWrongCurrent(observed) {
@@ -211,7 +238,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     showFeedback(msg, 'bad');
     updateScore();
     save();
-    setTimeout(() => { target = null; nextQuestion(); }, 1800);
+    setTimeout(() => { target = null; advance(); }, 1800);
   }
 
   function revealCurrent() {
@@ -242,10 +269,10 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
 
   function submitAnswer() {
     if (!target) return;
-    const answer = mode === 'quiz' ? dom.dropdown.value : dom.textbox.value.trim();
+    const answer = answerMethod === 'dropdown' ? dom.dropdown.value : dom.textbox.value.trim();
     if (!answer) return;
     if (norm(answer) === norm(target)) markCorrect(target);
-    else markWrongCurrent(mode === 'quiz' ? answer : null);
+    else markWrongCurrent(answerMethod === 'dropdown' ? answer : null);
   }
 
   function skipCurrent() {
@@ -258,7 +285,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     streetEls[target] && streetEls[target].classList.remove('target');
     streetEls[target] && streetEls[target].classList.add('wrong');
     target = null;
-    setTimeout(nextQuestion, 600);
+    setTimeout(advance, 600);
   }
 
   // --- Exclusion management ---
@@ -295,26 +322,63 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     save();
   }
 
-  // --- Mode switching ---
+  // --- Mode / toggle switching ---
+  // Random-only controls (New / Skip / Retry Missed) are hidden in Click
+  // selection and in Explore.
+  function applyControlVisibility() {
+    const randomOnly = (mode === 'test' && selection === 'random');
+    dom.newQ.style.display = randomOnly ? '' : 'none';
+    dom.missed.style.display = randomOnly ? '' : 'none';
+    dom.skip.style.display = randomOnly ? '' : 'none';
+  }
+
   function setMode(newMode) {
     mode = newMode;
     clearAllMarksComplete();
     target = null;
+    useMissedPool = false;
     if (mode === 'explore') {
+      dom.testToggles.style.display = 'none';
       dom.inputRow.style.display = 'none';
       showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
       showFeedback('');
     } else {
-      showPrompt('Press "New" to start.');
+      dom.testToggles.style.display = 'flex';
       dom.inputRow.style.display = 'flex';
-      dom.dropdown.style.display = mode === 'quiz' ? '' : 'none';
-      dom.textbox.style.display = mode === 'test' ? '' : 'none';
+      dom.dropdown.style.display = answerMethod === 'dropdown' ? '' : 'none';
+      dom.textbox.style.display = answerMethod === 'type' ? '' : 'none';
+      showPrompt(selection === 'random' ? 'Press "New" to start.' : 'Click any street to be quizzed on it.');
+      showFeedback('');
+    }
+    applyControlVisibility();
+  }
+
+  function setSelection(s) {
+    if (s === selection) return;
+    selection = s;
+    target = null;
+    useMissedPool = false;
+    clearAllMarks();
+    applyControlVisibility();
+    showPrompt(selection === 'random' ? 'Press "New" to start.' : 'Click any street to be quizzed on it.');
+    showFeedback('');
+  }
+
+  function setAnswerMethod(m) {
+    if (m === answerMethod) return;
+    answerMethod = m;
+    if (target) {
+      // Swap the input for the live question without penalty or re-pick.
+      presentQuestion(target, currentKind || 'click');
+    } else {
+      dom.dropdown.style.display = answerMethod === 'dropdown' ? '' : 'none';
+      dom.textbox.style.display = answerMethod === 'type' ? '' : 'none';
     }
   }
 
   function startNew() {
     if (mode === 'explore') {
-      showPrompt('Tap any street. (Switch to Quiz or Test mode to be quizzed.)');
+      showPrompt('Tap any street. (Switch to Test mode to be quizzed.)');
       return;
     }
     // If everything has been asked, restart the round fresh.
@@ -347,7 +411,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     target = null;
     renderExclusionManager();
     save();
-    setTimeout(nextQuestion, 600);
+    setTimeout(advance, 600);
   }
 
   // --- Wire up DOM controls ---
@@ -356,6 +420,20 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
       dom.modeTabs.forEach(x => x.classList.remove('active'));
       t.classList.add('active');
       setMode(t.dataset.mode);
+    });
+  });
+  dom.selectionTabs.forEach(t => {
+    t.addEventListener('click', () => {
+      dom.selectionTabs.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      setSelection(t.dataset.selection);
+    });
+  });
+  dom.answerTabs.forEach(t => {
+    t.addEventListener('click', () => {
+      dom.answerTabs.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      setAnswerMethod(t.dataset.answer);
     });
   });
   dom.newQ.addEventListener('click', startNew);
@@ -377,5 +455,6 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
   // --- Initial render ---
   updateScore();
   updateExclusionCount();
+  applyControlVisibility();
   showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
 }

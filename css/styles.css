@@ -53,6 +53,8 @@ body {
   border-radius: 6px;
   padding: 2px;
 }
+.test-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
+.test-toggles .mode-tabs { flex: 1; min-width: 140px; }
 .mode-tab {
   flex: 1; min-width: 70px;
   padding: 6px 10px;
@@ -148,6 +150,8 @@ body {
   .score { font-size: 11px; }
   .btn { padding: 6px 8px; font-size: 12px; }
   .mode-tab { font-size: 11px; padding: 5px 6px; min-width: 60px; }
+  .test-toggles { gap: 4px; }
+  .test-toggles .mode-tabs { min-width: 110px; }
   .controls { gap: 4px; }
   .legend { display: none; }
   .prompt { font-size: 12px; line-height: 1.3; }

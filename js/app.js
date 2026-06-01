@@ -24,7 +24,10 @@ function gatherDom() {
     reveal: $('reveal'),
     missed: $('missed'),
     resetView: $('resetView'),
-    modeTabs: Array.from(document.querySelectorAll('.mode-tab')),
+    testToggles: $('testToggles'),
+    modeTabs: Array.from(document.querySelectorAll('#modeTabs .mode-tab')),
+    selectionTabs: Array.from(document.querySelectorAll('#selectionTabs .mode-tab')),
+    answerTabs: Array.from(document.querySelectorAll('#answerTabs .mode-tab')),
   };
 }
 

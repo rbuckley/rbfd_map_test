@@ -14,10 +14,19 @@
     <h1>RBFD Map Test - District 1</h1>
     <div class="score">Score: <b id="score">0/0</b> (<span id="pct">--</span>)</div>
     <div class="controls">
-      <div class="mode-tabs">
+      <div class="mode-tabs" id="modeTabs">
         <button class="mode-tab active" data-mode="explore">Explore</button>
-        <button class="mode-tab" data-mode="quiz">Quiz</button>
         <button class="mode-tab" data-mode="test">Test</button>
+      </div>
+      <div class="test-toggles" id="testToggles" style="display:none;">
+        <div class="mode-tabs" id="selectionTabs">
+          <button class="mode-tab active" data-selection="random">Random</button>
+          <button class="mode-tab" data-selection="click">Click</button>
+        </div>
+        <div class="mode-tabs" id="answerTabs">
+          <button class="mode-tab active" data-answer="dropdown">Dropdown</button>
+          <button class="mode-tab" data-answer="type">Type</button>
+        </div>
       </div>
       <button class="btn primary" id="newQ">New</button>
       <button class="btn" id="reveal">Reveal</button>
