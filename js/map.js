@@ -1,0 +1,108 @@
+// MapView: owns pan/zoom for a given <svg> map element. It encapsulates the
+// viewBox state so the quiz engine only needs panToStreet() and resetView().
+
+export function createMapView(svg) {
+  const wrap = svg.parentElement;
+  const vbAttr = svg.getAttribute('viewBox').split(/\s+/).map(parseFloat);
+  const baseVB = { x: vbAttr[0], y: vbAttr[1], w: vbAttr[2], h: vbAttr[3] };
+  let vb = { ...baseVB };
+
+  function applyVB() {
+    svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  }
+  function resetView() {
+    vb = { ...baseVB };
+    applyVB();
+  }
+
+  // Zoom (mouse wheel)
+  wrap.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = svg.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+    const newW = vb.w * factor, newH = vb.h * factor;
+    if (newW > baseVB.w * 4 || newW < baseVB.w * 0.05) return;
+    vb.x = vb.x + (vb.w - newW) * px;
+    vb.y = vb.y + (vb.h - newH) * py;
+    vb.w = newW; vb.h = newH;
+    applyVB();
+  }, { passive: false });
+
+  // Pan (mouse drag)
+  let panning = false, panStart = null;
+  svg.addEventListener('mousedown', e => {
+    if (e.target.closest('.street')) return; // let click through
+    panning = true; svg.classList.add('dragging');
+    panStart = { x: e.clientX, y: e.clientY, vbx: vb.x, vby: vb.y };
+  });
+  window.addEventListener('mousemove', e => {
+    if (!panning) return;
+    const r = svg.getBoundingClientRect();
+    const dx = (e.clientX - panStart.x) / r.width * vb.w;
+    const dy = (e.clientY - panStart.y) / r.height * vb.h;
+    vb.x = panStart.vbx - dx; vb.y = panStart.vby - dy;
+    applyVB();
+  });
+  window.addEventListener('mouseup', () => {
+    panning = false; svg.classList.remove('dragging');
+  });
+
+  // Pan + pinch zoom (touch)
+  let touchState = null;
+  svg.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      touchState = { mode: 'pan', x: e.touches[0].clientX, y: e.touches[0].clientY, vbx: vb.x, vby: vb.y };
+    } else if (e.touches.length === 2) {
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const cx = (t1.clientX + t2.clientX) / 2, cy = (t1.clientY + t2.clientY) / 2;
+      const d = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      touchState = { mode: 'pinch', cx, cy, d, vb: { ...vb } };
+    }
+  }, { passive: true });
+  svg.addEventListener('touchmove', e => {
+    if (!touchState) return;
+    e.preventDefault();
+    const r = svg.getBoundingClientRect();
+    if (touchState.mode === 'pan' && e.touches.length === 1) {
+      const dx = (e.touches[0].clientX - touchState.x) / r.width * vb.w;
+      const dy = (e.touches[0].clientY - touchState.y) / r.height * vb.h;
+      vb.x = touchState.vbx - dx; vb.y = touchState.vby - dy;
+      applyVB();
+    } else if (touchState.mode === 'pinch' && e.touches.length === 2) {
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const d = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      const factor = touchState.d / d;
+      const baseV = touchState.vb;
+      const px = (touchState.cx - r.left) / r.width;
+      const py = (touchState.cy - r.top) / r.height;
+      const newW = baseV.w * factor, newH = baseV.h * factor;
+      if (newW > baseVB.w * 4 || newW < baseVB.w * 0.05) return;
+      vb.x = baseV.x + (baseV.w - newW) * px;
+      vb.y = baseV.y + (baseV.h - newH) * py;
+      vb.w = newW; vb.h = newH;
+      applyVB();
+    }
+  }, { passive: false });
+  svg.addEventListener('touchend', e => {
+    if (e.touches.length === 0) touchState = null;
+  });
+
+  // Pan the viewBox so a street is centered, but only if it's outside view.
+  function panToStreet(g) {
+    if (!g) return;
+    const bbox = g.getBBox();
+    const sx = bbox.x + bbox.width / 2;
+    const sy = bbox.y + bbox.height / 2;
+    if (sx < vb.x + vb.w * 0.1 || sx > vb.x + vb.w * 0.9 ||
+        sy < vb.y + vb.h * 0.1 || sy > vb.y + vb.h * 0.9) {
+      vb.x = sx - vb.w / 2;
+      vb.y = sy - vb.h / 2;
+      applyVB();
+    }
+  }
+
+  applyVB();
+  return { resetView, panToStreet };
+}

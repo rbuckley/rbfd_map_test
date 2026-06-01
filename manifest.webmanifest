@@ -1,0 +1,19 @@
+{
+  "name": "RBFD Map Test",
+  "short_name": "RBFD Map",
+  "description": "Interactive street-map quiz for learning fire department districts.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a1420",
+  "theme_color": "#16213e",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

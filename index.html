@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=4, user-scalable=yes">
+<meta name="theme-color" content="#16213e">
+<title>RBFD D1 Map Test - Interactive</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>RBFD Map Test - District 1</h1>
+    <div class="score">Score: <b id="score">0/0</b> (<span id="pct">--</span>)</div>
+    <div class="controls">
+      <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="explore">Explore</button>
+        <button class="mode-tab" data-mode="quiz">Quiz</button>
+        <button class="mode-tab" data-mode="test">Test</button>
+      </div>
+      <button class="btn primary" id="newQ">New</button>
+      <button class="btn" id="reveal">Reveal</button>
+      <button class="btn" id="missed">Retry Missed</button>
+      <button class="btn" id="resetView">Reset Zoom</button>
+    </div>
+  </div>
+  <div class="map-wrap">
+    <div style="padding:24px;color:var(--dim)">Loading map…</div>
+  </div>
+  <div class="bottom">
+    <div class="prompt" id="prompt">Tap a street to see its name. Pinch or scroll to zoom. Drag to pan.</div>
+    <div class="input-row" id="inputRow" style="display:none;">
+      <select id="dropdown" style="display:none;"></select>
+      <input id="textbox" type="text" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="Type the street name" style="display:none;"/>
+      <button class="btn primary" id="submitAns">Check</button>
+      <button class="btn" id="skip">Skip</button>
+      <button id="excludeBtn">Exclude</button>
+    </div>
+    <div class="feedback" id="feedback"></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      <button id="exclusionToggle">Manage Exclusions (0)</button>
+    </div>
+    <div id="exclusionManager"></div>
+    <div class="legend">
+      <span><i class="swatch"></i>Street</span>
+      <span><i class="swatch s190"></i>190th St</span>
+      <span><i class="swatch target"></i>Asked street</span>
+      <span><i class="swatch green"></i>Correct</span>
+      <span><i class="swatch red"></i>Wrong</span>
+    </div>
+  </div>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
