@@ -2,7 +2,7 @@
   "id": "d1",
   "name": "RBFD District 1",
   "map": "data/d1/map.svg",
-  "viewBox": "0 0 5225.5 4553.2",
+  "viewBox": "80.0 1898.4 5065.5 2917.6",
   "streets": [
     "190th Street",
     "1st Street",
@@ -115,7 +115,6 @@
     "Vincent Park",
     "Vincent Street",
     "Vista del Mar",
-    "West 190th Street",
     "West Torrance Boulevard",
     "Yacht Club Way",
     "Ynez Avenue",
