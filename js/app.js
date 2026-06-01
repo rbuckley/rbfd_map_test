@@ -3,6 +3,7 @@
 import { DEFAULT_DISTRICT, loadDistrict, listDistricts } from './districts.js';
 import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
+import { openBuilder } from './builder.js';
 import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict } from './storage.js';
 
 function gatherDom() {
@@ -34,6 +35,8 @@ function gatherDom() {
 async function main() {
   const mapWrap = document.querySelector('.map-wrap');
   const quiz = createQuiz({ dom: gatherDom() });
+  let currentDistrict = null;   // full record of the loaded district
+  let currentSource = null;     // 'builtin' | 'user'
 
   // Load a district and (re)point the quiz + map view at it.
   async function switchDistrict(id) {
@@ -44,6 +47,8 @@ async function main() {
       mapWrap.innerHTML = `<div style="padding:24px;color:var(--red)">Failed to load map data: ${err.message}<br><br>This app must be served over HTTP (e.g. a local server or GitHub Pages), not opened directly from the filesystem.</div>`;
       return;
     }
+    currentDistrict = district;
+    currentSource = (listDistricts().find(d => d.id === id) || {}).source || 'builtin';
     mapWrap.innerHTML = district.svgMarkup;
     const svg = mapWrap.querySelector('#map');
     const mapView = createMapView(svg);
@@ -77,6 +82,16 @@ async function main() {
     container.innerHTML = '';
     container.appendChild(sel);
   }
+
+  // Builder entry points.
+  document.getElementById('newDistrictBtn').addEventListener('click', () => {
+    openBuilder({ onSaved: id => switchDistrict(id) });
+  });
+  document.getElementById('editDistrictBtn').addEventListener('click', () => {
+    if (!currentDistrict) return;
+    // User districts edit in place; built-ins open as an editable duplicate.
+    openBuilder({ existing: currentDistrict, editable: currentSource === 'user', onSaved: id => switchDistrict(id) });
+  });
 
   // Pick the remembered district if it still exists, else the default.
   const remembered = loadSelectedDistrict();

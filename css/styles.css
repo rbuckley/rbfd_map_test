@@ -207,3 +207,50 @@ body {
   background: #2d5a8a; color: var(--text); border: none;
   padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;
 }
+
+/* === District builder overlay === */
+.builder-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: var(--bg); color: var(--text);
+  display: flex; flex-direction: column;
+}
+.builder-bar {
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  padding: 8px 10px; background: var(--panel); border-bottom: 2px solid var(--accent);
+}
+.builder-name {
+  padding: 8px; background: #0a1420; color: var(--text);
+  border: 1px solid #2d4a6f; border-radius: 6px; font-size: 14px; font-family: inherit;
+  min-width: 160px;
+}
+.builder-body { flex: 1; display: flex; min-height: 0; }
+.builder-canvas-wrap { flex: 1; position: relative; overflow: hidden; background: #0d3144; }
+#bCanvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.builder-hint {
+  position: absolute; left: 10px; bottom: 10px; right: 10px;
+  background: rgba(10,20,32,0.85); color: var(--dim);
+  padding: 8px 10px; border-radius: 6px; font-size: 12px; pointer-events: none;
+}
+.builder-hint code { color: var(--accent); }
+.builder-side {
+  width: 280px; flex: 0 0 auto; background: var(--panel);
+  border-left: 1px solid #2d4a6f; display: flex; flex-direction: column;
+  padding: 8px; gap: 6px; overflow: hidden;
+}
+.builder-section { font-size: 12px; color: var(--dim); }
+.builder-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.builder-row { display: flex; gap: 4px; align-items: center; }
+.builder-row-name {
+  flex: 1; min-width: 0; padding: 5px; background: #0a1420; color: var(--text);
+  border: 1px solid #2d4a6f; border-radius: 4px; font-size: 13px; font-family: inherit;
+}
+.builder-excl { font-size: 11px; color: var(--dim); display: inline-flex; align-items: center; gap: 2px; }
+.builder-del { background: #8b0000; color: #ffe0e0; border: none; border-radius: 4px; padding: 4px 7px; cursor: pointer; }
+.builder-groups {
+  height: 90px; resize: vertical; padding: 6px; background: #0a1420; color: var(--text);
+  border: 1px solid #2d4a6f; border-radius: 6px; font-size: 12px; font-family: inherit;
+}
+@media (max-width: 600px) {
+  .builder-body { flex-direction: column; }
+  .builder-side { width: auto; border-left: none; border-top: 1px solid #2d4a6f; max-height: 40%; }
+}
