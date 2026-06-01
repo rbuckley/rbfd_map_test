@@ -95,6 +95,7 @@ export function buildDistrictRecord(draft) {
     // authoring data (ignored by the quiz, used to re-edit losslessly)
     geometry: draft.streets,
     features,
+    boundary: draft.boundary || null,
     refImage: draft.refImage || null,
     imgW: draft.imgW || null,
     imgH: draft.imgH || null,
@@ -156,7 +157,7 @@ export function nextDistrictId(name) {
 // Download a district's streets.json + map.svg (authoring fields stripped) and
 // return on-screen instructions for committing them.
 export function exportDistrictFiles(record) {
-  const { svgMarkup, geometry, features, refImage, imgW, imgH, ...config } = record;
+  const { svgMarkup, geometry, features, boundary, refImage, imgW, imgH, ...config } = record;
   download(`${record.id}.streets.json`, JSON.stringify(config, null, 2) + '\n', 'application/json');
   download(`${record.id}.map.svg`, svgMarkup, 'image/svg+xml');
   return `Downloaded ${record.id}.streets.json + ${record.id}.map.svg. Put them at ` +
@@ -182,6 +183,7 @@ export function openBuilder({ existing = null, editable = false, onSaved } = {})
     // Park/school areas aren't hand-editable here, but carry them through a
     // save so editing an imported district doesn't drop its shading.
     features: existing ? (existing.features || []) : [],
+    boundary: existing ? (existing.boundary || null) : null,
   };
 
   let drawMode = true;        // true = draw, false = pan
