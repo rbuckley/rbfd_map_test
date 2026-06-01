@@ -254,3 +254,16 @@ body {
   .builder-body { flex-direction: column; }
   .builder-side { width: auto; border-left: none; border-top: 1px solid #2d4a6f; max-height: 40%; }
 }
+
+/* === New-district chooser === */
+.chooser-overlay {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(10,20,32,0.7); display: flex; align-items: center; justify-content: center;
+}
+.chooser-card {
+  background: var(--panel); border: 1px solid #2d4a6f; border-radius: 10px;
+  padding: 18px; width: min(360px, 90vw); display: flex; flex-direction: column; gap: 10px;
+}
+.chooser-card h2 { font-size: 16px; }
+.chooser-card .btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px; text-align: left; }
+.chooser-card .btn small { font-weight: 400; opacity: 0.8; font-size: 11px; }

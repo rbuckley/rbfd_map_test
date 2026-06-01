@@ -4,6 +4,7 @@ import { DEFAULT_DISTRICT, loadDistrict, listDistricts } from './districts.js';
 import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
 import { openBuilder } from './builder.js';
+import { openMapImporter } from './mapImporter.js';
 import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict } from './storage.js';
 
 function gatherDom() {
@@ -83,10 +84,28 @@ async function main() {
     container.appendChild(sel);
   }
 
+  // Small chooser: draw on a map (auto-import) vs trace an image (manual).
+  function chooseNewDistrict() {
+    const onSaved = id => switchDistrict(id);
+    const ov = document.createElement('div');
+    ov.className = 'chooser-overlay';
+    ov.innerHTML = `
+      <div class="chooser-card">
+        <h2>New district</h2>
+        <button class="btn primary" id="chMap">Draw on a map<small>Auto-import streets from OpenStreetMap</small></button>
+        <button class="btn" id="chImg">Trace an image<small>Draw streets by hand over an uploaded image</small></button>
+        <button class="btn" id="chCancel">Cancel</button>
+      </div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener('click', e => { if (e.target === ov) close(); });
+    ov.querySelector('#chMap').addEventListener('click', () => { close(); openMapImporter({ onSaved }); });
+    ov.querySelector('#chImg').addEventListener('click', () => { close(); openBuilder({ onSaved }); });
+    ov.querySelector('#chCancel').addEventListener('click', close);
+  }
+
   // Builder entry points.
-  document.getElementById('newDistrictBtn').addEventListener('click', () => {
-    openBuilder({ onSaved: id => switchDistrict(id) });
-  });
+  document.getElementById('newDistrictBtn').addEventListener('click', chooseNewDistrict);
   document.getElementById('editDistrictBtn').addEventListener('click', () => {
     if (!currentDistrict) return;
     // User districts edit in place; built-ins open as an editable duplicate.

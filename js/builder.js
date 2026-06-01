@@ -124,6 +124,22 @@ function download(filename, text, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// A fresh, collision-free district id derived from a name.
+export function nextDistrictId(name) {
+  return makeUniqueId(slugify(name), takenIds());
+}
+
+// Download a district's streets.json + map.svg (authoring fields stripped) and
+// return on-screen instructions for committing them.
+export function exportDistrictFiles(record) {
+  const { svgMarkup, geometry, refImage, imgW, imgH, ...config } = record;
+  download(`${record.id}.streets.json`, JSON.stringify(config, null, 2) + '\n', 'application/json');
+  download(`${record.id}.map.svg`, svgMarkup, 'image/svg+xml');
+  return `Downloaded ${record.id}.streets.json + ${record.id}.map.svg. Put them at ` +
+    `data/${record.id}/streets.json and data/${record.id}/map.svg, then add to js/districts.js: ` +
+    `{ id:'${record.id}', name:'${record.name}', config:'data/${record.id}/streets.json' }`;
+}
+
 // ---- Builder UI ----------------------------------------------------------
 
 export function openBuilder({ existing = null, editable = false, onSaved } = {}) {
@@ -325,7 +341,7 @@ export function openBuilder({ existing = null, editable = false, onSaved } = {})
     draft.confusionGroups = parseConfusionText($('bGroups').value, names);
     // assign / keep id
     if (!draft.id || !editable) {
-      draft.id = makeUniqueId(slugify(draft.name), takenIds());
+      draft.id = nextDistrictId(draft.name);
     }
     return buildDistrictRecord(draft);
   }
@@ -340,16 +356,7 @@ export function openBuilder({ existing = null, editable = false, onSaved } = {})
 
   $('bExport').addEventListener('click', () => {
     if (!draft.streets.length) { $('bHint').textContent = 'Add at least one street before exporting.'; return; }
-    const record = collect();
-    const { svgMarkup, ...config } = record;
-    const json = { ...config };
-    delete json.geometry; delete json.refImage; delete json.imgW; delete json.imgH;
-    download(`${record.id}.streets.json`, JSON.stringify(json, null, 2) + '\n', 'application/json');
-    download(`${record.id}.map.svg`, svgMarkup, 'image/svg+xml');
-    $('bHint').innerHTML =
-      `Downloaded <code>${record.id}.streets.json</code> + <code>${record.id}.map.svg</code>. ` +
-      `Put them at <code>data/${record.id}/streets.json</code> and <code>data/${record.id}/map.svg</code>, ` +
-      `then add to <code>js/districts.js</code>: <code>{ id:'${record.id}', name:'${record.name}', config:'data/${record.id}/streets.json' }</code>`;
+    $('bHint').textContent = exportDistrictFiles(collect());
   });
 
   function cleanup() { overlay.remove(); }
