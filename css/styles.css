@@ -139,7 +139,6 @@ body {
 }
 .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend .swatch { width: 12px; height: 3px; background: #9bb4cc; border-radius: 1px; }
-.legend .swatch.s190 { background: #ff8a3d; }
 .legend .swatch.target { background: var(--accent); height: 5px; }
 .legend .swatch.green { background: var(--green); }
 .legend .swatch.red { background: var(--red); }
