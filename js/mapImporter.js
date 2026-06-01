@@ -225,7 +225,9 @@ export function openMapImporter({ onSaved } = {}) {
         <button id="miCitySearch" class="btn">Find city</button>
         <div id="miCityResults" class="mi-city-results"></div>
       </span>
+      <label class="mi-check"><input type="checkbox" id="miSubdivide"> Subdivide into districts</label>
       <button id="miFinish" class="btn primary">Finish boundary &amp; import</button>
+      <button id="miCreate" class="btn primary" style="display:none;">Create district from area</button>
       <button id="miClear" class="btn">Clear boundary</button>
       <span style="flex:1"></span>
       <button id="miSave" class="btn primary" disabled>Save</button>
@@ -240,6 +242,8 @@ export function openMapImporter({ onSaved } = {}) {
       <div class="builder-side">
         <div class="builder-section"><b>Streets</b> (<span id="miCount">0</span>)</div>
         <div id="miList" class="builder-list"></div>
+        <div class="builder-section" id="miCreatedSection" style="display:none;"><b>Created districts</b></div>
+        <div id="miCreated" class="builder-list"></div>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -303,6 +307,8 @@ export function openMapImporter({ onSaved } = {}) {
     let line = L.polyline([], { color: '#ff8a3d', weight: 2 }).addTo(map);
     let cityRing = null;             // [[lng,lat],...] from a chosen city
     let areaId = null;               // Overpass area id for the chosen city
+    let cityJson = null;             // cached Overpass result (for subdividing)
+    let subdividing = false;         // after a pull, draw sub-districts
     let cityLayer = null;
 
     function clearCity() {
@@ -316,16 +322,31 @@ export function openMapImporter({ onSaved } = {}) {
     }
 
     map.on('click', e => {
-      clearCity();                   // drawing overrides a chosen city
+      if (!subdividing) clearCity();  // drawing overrides a chosen city (but not while subdividing)
       points.push(e.latlng);
       markers.push(L.circleMarker(e.latlng, { radius: 4, color: '#ff8a3d' }).addTo(map));
       line.setLatLngs(points.concat(points.length > 2 ? [points[0]] : []));
     });
 
     $('miClear').addEventListener('click', () => {
-      clearDrawn(); clearCity();
-      hint('Boundary cleared. Click to draw, or search a city.');
+      clearDrawn();
+      if (!subdividing) clearCity();
+      hint(subdividing ? 'Sub-area cleared. Draw the next district boundary.' : 'Boundary cleared. Click to draw, or search a city.');
     });
+
+    // Draw the previewed streets/areas for a fetched Overpass result.
+    const FILL = { park: ['#2d5a3d', '#1f3d2c'], school: ['#5a4d2d', '#3d3320'], water: ['#2c5a73', '#15455e'] };
+    function previewOverpass(json) {
+      for (const el of json.elements) {
+        if (!el.geometry || !el.tags) continue;
+        const latlngs = el.geometry.map(g => [g.lat, g.lon]);
+        const t = el.tags.leisure === 'park' ? 'park'
+          : el.tags.amenity === 'school' ? 'school'
+          : (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') ? 'water' : null;
+        if (t) L.polygon(latlngs, { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
+        else if (el.tags.highway) L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
+      }
+    }
 
     // --- City search ---
     function selectCity(result) {
@@ -364,9 +385,12 @@ export function openMapImporter({ onSaved } = {}) {
     $('miCitySearch').addEventListener('click', doCitySearch);
     $('miCity').addEventListener('keydown', e => { if (e.key === 'Enter') doCitySearch(); });
 
+    const featCount = (feats, t) => feats.filter(f => f.type === t).length;
+
     $('miFinish').addEventListener('click', async () => {
       const boundary = cityRing || (points.length >= 3 ? points.map(p => [p.lng, p.lat]) : null);
       if (!boundary) { hint('Draw a boundary (3+ points) or search a city first.'); return; }
+      const subdivide = $('miSubdivide').checked;
       hint(areaId ? 'Fetching the whole city from OpenStreetMap… (can take a while)' : 'Fetching streets from OpenStreetMap…');
       $('miFinish').disabled = true;
       try {
@@ -374,38 +398,65 @@ export function openMapImporter({ onSaved } = {}) {
         const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
         if (!res.ok) throw new Error(`Overpass error ${res.status}`);
         const json = await res.json();
-        draft.boundary = boundary.map(([lng, lat]) => ({ lat, lng }));
-        draft.streets = overpassToStreets(json, boundary);
-        draft.features = overpassToFeatures(json, boundary);
-        renderList();
-        if (draft.streets.length || draft.features.length) {
-          $('miSave').disabled = false; $('miExport').disabled = false;
-          const count = t => draft.features.filter(f => f.type === t).length;
-          hint(`Imported ${draft.streets.length} streets, ${count('park')} parks, ${count('school')} schools, ${count('water')} water. Review the list, name the district, then Save or Export.`);
-          // Preview areas (filled) and streets (lines) on the map.
-          const FILL = {
-            park: ['#2d5a3d', '#1f3d2c'], school: ['#5a4d2d', '#3d3320'], water: ['#2c5a73', '#15455e'],
-          };
-          for (const el of json.elements) {
-            if (!el.geometry || !el.tags) continue;
-            const latlngs = el.geometry.map(g => [g.lat, g.lon]);
-            const t = el.tags.leisure === 'park' ? 'park'
-              : el.tags.amenity === 'school' ? 'school'
-              : (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') ? 'water' : null;
-            if (t) {
-              L.polygon(latlngs, { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
-            } else if (el.tags.highway) {
-              L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
-            }
-          }
+        cityJson = json;
+        previewOverpass(json);
+
+        if (subdivide) {
+          // Keep the city as a reference; draw sub-districts and create each.
+          subdividing = true;
+          clearDrawn();
+          $('miFinish').style.display = 'none';
+          $('miCreate').style.display = '';
+          $('miSave').style.display = 'none';
+          $('miExport').style.display = 'none';
+          $('miCreatedSection').style.display = '';
+          const total = overpassToStreets(json).length;
+          hint(`City loaded (${total} streets). Draw a sub-district boundary, name it, then “Create district from area”. Repeat for each.`);
         } else {
-          hint('No named streets found in that area. Try a larger boundary.');
+          draft.boundary = boundary.map(([lng, lat]) => ({ lat, lng }));
+          draft.streets = overpassToStreets(json, boundary);
+          draft.features = overpassToFeatures(json, boundary);
+          renderList();
+          if (draft.streets.length || draft.features.length) {
+            $('miSave').disabled = false; $('miExport').disabled = false;
+            hint(`Imported ${draft.streets.length} streets, ${featCount(draft.features, 'park')} parks, ${featCount(draft.features, 'school')} schools, ${featCount(draft.features, 'water')} water. Review the list, name the district, then Save or Export.`);
+          } else {
+            hint('No named streets found in that area. Try a larger boundary.');
+          }
         }
       } catch (err) {
         hint(`Import failed: ${err.message}. (Needs an internet connection.)`);
       } finally {
         $('miFinish').disabled = false;
       }
+    });
+
+    // Subdivide: clip the cached city data to the drawn sub-area → a district.
+    $('miCreate').addEventListener('click', () => {
+      if (!cityJson) return;
+      if (points.length < 3) { hint('Draw a sub-district boundary (3+ points) first.'); return; }
+      const name = $('miName').value.trim();
+      if (!name) { hint('Enter a name for this district first.'); return; }
+      const subPoly = points.map(p => [p.lng, p.lat]);
+      const streets = overpassToStreets(cityJson, subPoly);
+      const features = overpassToFeatures(cityJson, subPoly);
+      if (!streets.length) { hint('No streets fell inside that sub-area. Try again.'); return; }
+      const id = nextDistrictId(name);
+      const record = buildDistrictRecord({
+        id, name, streets, features, excluded: new Set(), confusionGroups: {},
+        boundary: points.map(p => ({ lat: p.lat, lng: p.lng })),
+      });
+      saveUserDistrict(record);
+      if (onSaved) onSaved(id);
+      // Keep the created outline on the map, log it, and reset for the next.
+      L.polygon(points.map(p => [p.lat, p.lng]), { color: '#2ecc71', weight: 2, fillColor: '#2ecc71', fillOpacity: 0.12 }).addTo(map);
+      const row = document.createElement('div');
+      row.className = 'builder-row';
+      row.textContent = `${name} — ${streets.length} streets`;
+      $('miCreated').appendChild(row);
+      clearDrawn();
+      $('miName').value = '';
+      hint(`Created “${name}” (${streets.length} streets). Draw the next sub-district, or Close when done.`);
     });
   }).catch(err => hint(err.message));
 
