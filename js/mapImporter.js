@@ -28,6 +28,8 @@ export function overpassQuery(polyLatLng) {
     `way["highway"~"${HIGHWAY_RE}"]["name"]${p};` +
     `way["leisure"="park"]${p};` +
     `way["amenity"="school"]${p};` +
+    `way["natural"="water"]${p};` +
+    `way["waterway"="riverbank"]${p};` +
     `);out geom;`;
 }
 
@@ -52,6 +54,7 @@ export function overpassToFeatures(json) {
     let type = null;
     if (el.tags.leisure === 'park') type = 'park';
     else if (el.tags.amenity === 'school') type = 'school';
+    else if (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') type = 'water';
     if (!type) continue;
     const poly = el.geometry.map(g => project(g.lat, g.lon));
     if (poly.length >= 3) feats.push({ type, polygon: poly });
@@ -189,16 +192,20 @@ export function openMapImporter({ onSaved } = {}) {
         renderList();
         if (draft.streets.length || draft.features.length) {
           $('miSave').disabled = false; $('miExport').disabled = false;
-          const parks = draft.features.filter(f => f.type === 'park').length;
-          const schools = draft.features.filter(f => f.type === 'school').length;
-          hint(`Imported ${draft.streets.length} streets, ${parks} parks, ${schools} schools. Review the list, name the district, then Save or Export.`);
-          // Preview parks/schools (filled) and streets (lines) on the map.
+          const count = t => draft.features.filter(f => f.type === t).length;
+          hint(`Imported ${draft.streets.length} streets, ${count('park')} parks, ${count('school')} schools, ${count('water')} water. Review the list, name the district, then Save or Export.`);
+          // Preview areas (filled) and streets (lines) on the map.
+          const FILL = {
+            park: ['#2d5a3d', '#1f3d2c'], school: ['#5a4d2d', '#3d3320'], water: ['#2c5a73', '#15455e'],
+          };
           for (const el of json.elements) {
             if (!el.geometry || !el.tags) continue;
             const latlngs = el.geometry.map(g => [g.lat, g.lon]);
-            if (el.tags.leisure === 'park' || el.tags.amenity === 'school') {
-              const park = el.tags.leisure === 'park';
-              L.polygon(latlngs, { color: park ? '#2d5a3d' : '#5a4d2d', fillColor: park ? '#1f3d2c' : '#3d3320', fillOpacity: 0.55, weight: 1 }).addTo(map);
+            const t = el.tags.leisure === 'park' ? 'park'
+              : el.tags.amenity === 'school' ? 'school'
+              : (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') ? 'water' : null;
+            if (t) {
+              L.polygon(latlngs, { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
             } else if (el.tags.highway) {
               L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
             }

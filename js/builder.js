@@ -10,9 +10,12 @@ import { DISTRICTS } from './districts.js';
 const STREET_STROKE = '#9bb4cc';
 // Filled background areas, matching the District 1 palette.
 const AREA_STYLE = {
+  water: { fill: '#15455e', stroke: '#2c5a73', width: 1 },
   park: { fill: '#1f3d2c', stroke: '#2d5a3d', width: 1 },
   school: { fill: '#3d3320', stroke: '#5a4d2d', width: 0.8 },
 };
+// Draw order (low = furthest back): water under parks under schools.
+const AREA_RANK = { water: 0, park: 1, school: 2 };
 const round = n => Math.round(n * 10) / 10;
 const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -52,8 +55,10 @@ export function buildDistrictRecord(draft) {
   }
   const [vx, vy, vw, vh] = vb.split(' ');
 
-  // Filled park/school areas, drawn behind the streets and non-interactive.
-  const areaPaths = features.map(f => {
+  // Filled water/park/school areas, drawn behind the streets (water furthest
+  // back) and non-interactive.
+  const ordered = [...features].sort((a, b) => (AREA_RANK[a.type] ?? 1) - (AREA_RANK[b.type] ?? 1));
+  const areaPaths = ordered.map(f => {
     const s = AREA_STYLE[f.type] || AREA_STYLE.park;
     const d = f.polygon.map((p, i) => `${i ? 'L' : 'M'}${round(p[0])},${round(p[1])}`).join('') + 'Z';
     return `<path class="area" d="${d}" fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.width}" fill-rule="evenodd"/>`;
