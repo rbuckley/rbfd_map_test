@@ -240,6 +240,7 @@ export function openMapImporter({ onSaved } = {}) {
         <div class="builder-hint" id="miHint">Loading map…</div>
       </div>
       <div class="builder-side">
+        <div class="builder-section mi-note">ℹ️ A <b>drawn boundary</b> pulls every street inside your shape — <b>across city lines</b>. <b>“Pull a city”</b> stays within that city’s official limits (and Subdivide splits only the city).</div>
         <div class="builder-section"><b>Streets</b> (<span id="miCount">0</span>)</div>
         <div id="miList" class="builder-list"></div>
         <div class="builder-section" id="miCreatedSection" style="display:none;"><b>Created districts</b></div>
