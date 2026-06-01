@@ -23,20 +23,40 @@ export function project(lat, lon) {
 
 export function overpassQuery(polyLatLng) {
   const poly = polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ');
-  return `[out:json][timeout:90];way["highway"~"${HIGHWAY_RE}"]["name"](poly:"${poly}");out geom;`;
+  const p = `(poly:"${poly}")`;
+  return `[out:json][timeout:90];(` +
+    `way["highway"~"${HIGHWAY_RE}"]["name"]${p};` +
+    `way["leisure"="park"]${p};` +
+    `way["amenity"="school"]${p};` +
+    `);out geom;`;
 }
 
 // Convert an Overpass JSON response into street records grouped by name.
 export function overpassToStreets(json) {
   const byName = new Map();
   for (const el of (json.elements || [])) {
-    if (el.type !== 'way' || !el.tags || !el.tags.name || !el.geometry) continue;
+    if (el.type !== 'way' || !el.tags || !el.tags.highway || !el.tags.name || !el.geometry) continue;
     const seg = el.geometry.map(g => project(g.lat, g.lon));
     if (seg.length < 2) continue;
     if (!byName.has(el.tags.name)) byName.set(el.tags.name, []);
     byName.get(el.tags.name).push(seg);
   }
   return [...byName.entries()].map(([name, segments]) => ({ name, segments }));
+}
+
+// Park (leisure=park) and school (amenity=school) area polygons for shading.
+export function overpassToFeatures(json) {
+  const feats = [];
+  for (const el of (json.elements || [])) {
+    if (el.type !== 'way' || !el.tags || !el.geometry) continue;
+    let type = null;
+    if (el.tags.leisure === 'park') type = 'park';
+    else if (el.tags.amenity === 'school') type = 'school';
+    if (!type) continue;
+    const poly = el.geometry.map(g => project(g.lat, g.lon));
+    if (poly.length >= 3) feats.push({ type, polygon: poly });
+  }
+  return feats;
 }
 
 function loadLeaflet() {
@@ -58,7 +78,7 @@ function loadLeaflet() {
 // --- Importer UI ---
 
 export function openMapImporter({ onSaved } = {}) {
-  const draft = { id: null, name: '', streets: [], excluded: new Set(), confusionGroups: {} };
+  const draft = { id: null, name: '', streets: [], features: [], excluded: new Set(), confusionGroups: {} };
 
   const overlay = document.createElement('div');
   overlay.className = 'builder-overlay';
@@ -165,13 +185,24 @@ export function openMapImporter({ onSaved } = {}) {
         if (!res.ok) throw new Error(`Overpass error ${res.status}`);
         const json = await res.json();
         draft.streets = overpassToStreets(json);
+        draft.features = overpassToFeatures(json);
         renderList();
-        if (draft.streets.length) {
+        if (draft.streets.length || draft.features.length) {
           $('miSave').disabled = false; $('miExport').disabled = false;
-          hint(`Imported ${draft.streets.length} streets. Review the list, name the district, then Save or Export.`);
-          // Preview the imported streets on the map.
-          json.elements.filter(el => el.geometry).forEach(el =>
-            L.polyline(el.geometry.map(g => [g.lat, g.lon]), { color: '#5fa8d3', weight: 1.5 }).addTo(map));
+          const parks = draft.features.filter(f => f.type === 'park').length;
+          const schools = draft.features.filter(f => f.type === 'school').length;
+          hint(`Imported ${draft.streets.length} streets, ${parks} parks, ${schools} schools. Review the list, name the district, then Save or Export.`);
+          // Preview parks/schools (filled) and streets (lines) on the map.
+          for (const el of json.elements) {
+            if (!el.geometry || !el.tags) continue;
+            const latlngs = el.geometry.map(g => [g.lat, g.lon]);
+            if (el.tags.leisure === 'park' || el.tags.amenity === 'school') {
+              const park = el.tags.leisure === 'park';
+              L.polygon(latlngs, { color: park ? '#2d5a3d' : '#5a4d2d', fillColor: park ? '#1f3d2c' : '#3d3320', fillOpacity: 0.55, weight: 1 }).addTo(map);
+            } else if (el.tags.highway) {
+              L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
+            }
+          }
         } else {
           hint('No named streets found in that area. Try a larger boundary.');
         }

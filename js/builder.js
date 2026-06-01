@@ -8,6 +8,11 @@ import { saveUserDistrict, loadUserDistricts } from './storage.js';
 import { DISTRICTS } from './districts.js';
 
 const STREET_STROKE = '#9bb4cc';
+// Filled background areas, matching the District 1 palette.
+const AREA_STYLE = {
+  park: { fill: '#1f3d2c', stroke: '#2d5a3d', width: 1 },
+  school: { fill: '#3d3320', stroke: '#5a4d2d', width: 0.8 },
+};
 const round = n => Math.round(n * 10) / 10;
 const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -30,17 +35,29 @@ function segPath(seg) {
 //   { id, name, streets:[{name, segments:[[[x,y],...],...]}], excluded:[],
 //     confusionGroups:{}, refImage, imgW, imgH }
 export function buildDistrictRecord(draft) {
-  const xs = [], ys = [];
-  for (const st of draft.streets) for (const seg of st.segments) for (const [x, y] of seg) { xs.push(x); ys.push(y); }
+  const features = draft.features || [];
+  // Bounding box over every street + area point (loop, not spread, to stay
+  // safe for large point counts).
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity, any = false;
+  const grow = (x, y) => { any = true; if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; };
+  for (const st of draft.streets) for (const seg of st.segments) for (const [x, y] of seg) grow(x, y);
+  for (const f of features) for (const [x, y] of f.polygon) grow(x, y);
+
   let vb;
-  if (xs.length) {
-    const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
+  if (any) {
     const m = Math.max(20, 0.04 * Math.max(maxx - minx, maxy - miny));
     vb = `${round(minx - m)} ${round(miny - m)} ${round(maxx - minx + 2 * m)} ${round(maxy - miny + 2 * m)}`;
   } else {
     vb = `0 0 ${draft.imgW || 1000} ${draft.imgH || 1000}`;
   }
   const [vx, vy, vw, vh] = vb.split(' ');
+
+  // Filled park/school areas, drawn behind the streets and non-interactive.
+  const areaPaths = features.map(f => {
+    const s = AREA_STYLE[f.type] || AREA_STYLE.park;
+    const d = f.polygon.map((p, i) => `${i ? 'L' : 'M'}${round(p[0])},${round(p[1])}`).join('') + 'Z';
+    return `<path class="area" d="${d}" fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.width}" fill-rule="evenodd"/>`;
+  }).join('\n');
 
   const groups = draft.streets.map(st => {
     const paths = st.segments.map(seg =>
@@ -53,6 +70,7 @@ export function buildDistrictRecord(draft) {
   const svgMarkup =
     `<svg id="map" viewBox="${vb}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">\n` +
     `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#0d3144"/>\n` +
+    (areaPaths ? areaPaths + '\n' : '') +
     `${groups}\n</svg>\n`;
 
   // De-duplicate street names for the quiz list (a street may have segments
@@ -71,6 +89,7 @@ export function buildDistrictRecord(draft) {
     svgMarkup,
     // authoring data (ignored by the quiz, used to re-edit losslessly)
     geometry: draft.streets,
+    features,
     refImage: draft.refImage || null,
     imgW: draft.imgW || null,
     imgH: draft.imgH || null,
@@ -132,7 +151,7 @@ export function nextDistrictId(name) {
 // Download a district's streets.json + map.svg (authoring fields stripped) and
 // return on-screen instructions for committing them.
 export function exportDistrictFiles(record) {
-  const { svgMarkup, geometry, refImage, imgW, imgH, ...config } = record;
+  const { svgMarkup, geometry, features, refImage, imgW, imgH, ...config } = record;
   download(`${record.id}.streets.json`, JSON.stringify(config, null, 2) + '\n', 'application/json');
   download(`${record.id}.map.svg`, svgMarkup, 'image/svg+xml');
   return `Downloaded ${record.id}.streets.json + ${record.id}.map.svg. Put them at ` +
@@ -155,6 +174,9 @@ export function openBuilder({ existing = null, editable = false, onSaved } = {})
       : [],
     excluded: new Set(existing ? (existing.excluded || []) : []),
     confusionGroups: existing ? { ...(existing.confusionGroups || {}) } : {},
+    // Park/school areas aren't hand-editable here, but carry them through a
+    // save so editing an imported district doesn't drop its shading.
+    features: existing ? (existing.features || []) : [],
   };
 
   let drawMode = true;        // true = draw, false = pan

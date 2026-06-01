@@ -92,6 +92,7 @@ body {
 #map.dragging { cursor: grabbing; }
 .unnamed { pointer-events: none; }
 .civic { pointer-events: none; }
+.area { pointer-events: none; }
 .street { cursor: pointer; }
 .street .vis { transition: stroke 0.15s; }
 .street.target .vis { stroke: var(--accent) !important; stroke-width: 5 !important; }
