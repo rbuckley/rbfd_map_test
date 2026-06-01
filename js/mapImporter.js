@@ -106,16 +106,55 @@ export function clipPolygonToPolygon(subject, clipCCW) {
   return output;
 }
 
+const FEATURE_FILTERS = p =>
+  `way["highway"~"${HIGHWAY_RE}"]["name"]${p};` +
+  `way["leisure"="park"]${p};` +
+  `way["amenity"="school"]${p};` +
+  `way["natural"="water"]${p};` +
+  `way["waterway"="riverbank"]${p};`;
+
 export function overpassQuery(polyLatLng) {
   const poly = polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ');
-  const p = `(poly:"${poly}")`;
-  return `[out:json][timeout:90];(` +
-    `way["highway"~"${HIGHWAY_RE}"]["name"]${p};` +
-    `way["leisure"="park"]${p};` +
-    `way["amenity"="school"]${p};` +
-    `way["natural"="water"]${p};` +
-    `way["waterway"="riverbank"]${p};` +
-    `);out geom;`;
+  return `[out:json][timeout:90];(${FEATURE_FILTERS(`(poly:"${poly}")`)});out geom;`;
+}
+
+// Pull everything inside an OSM administrative area (areaId = 3600000000 + the
+// boundary relation's osm_id) — used for "import a whole city".
+export function overpassAreaQuery(areaId) {
+  return `[out:json][timeout:180];area(${areaId})->.a;(${FEATURE_FILTERS('(area.a)')});out geom;`;
+}
+
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+
+function ringArea(ring) {
+  let s = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) s += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  return s / 2;
+}
+
+// Largest outer ring ([[lng,lat],...]) from a GeoJSON Polygon / MultiPolygon.
+export function extractOuterRing(geojson) {
+  if (!geojson) return null;
+  if (geojson.type === 'Polygon') return geojson.coordinates[0];
+  if (geojson.type === 'MultiPolygon') {
+    let best = null, bestA = -1;
+    for (const poly of geojson.coordinates) {
+      const a = Math.abs(ringArea(poly[0]));
+      if (a > bestA) { bestA = a; best = poly[0]; }
+    }
+    return best;
+  }
+  return null;
+}
+
+// Geocode a place name to boundary candidates (Nominatim). Returns entries with
+// a usable polygon boundary and the relation osm_id for the Overpass area.
+async function geocodeCity(query) {
+  const url = `${NOMINATIM_URL}?format=jsonv2&polygon_geojson=1&limit=8&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Geocoding failed (${res.status})`);
+  const arr = await res.json();
+  return arr.filter(r => r.geojson && (r.geojson.type === 'Polygon' || r.geojson.type === 'MultiPolygon'));
 }
 
 // Convert an Overpass JSON response into street records grouped by name. When a
@@ -181,6 +220,11 @@ export function openMapImporter({ onSaved } = {}) {
   overlay.innerHTML = `
     <div class="builder-bar">
       <input id="miName" class="builder-name" placeholder="District name" />
+      <span class="mi-city">
+        <input id="miCity" class="builder-name" placeholder="…or pull a whole city" />
+        <button id="miCitySearch" class="btn">Find city</button>
+        <div id="miCityResults" class="mi-city-results"></div>
+      </span>
       <button id="miFinish" class="btn primary">Finish boundary &amp; import</button>
       <button id="miClear" class="btn">Clear boundary</button>
       <span style="flex:1"></span>
@@ -254,34 +298,83 @@ export function openMapImporter({ onSaved } = {}) {
     setTimeout(() => map.invalidateSize(), 100);
     hint('Click to drop boundary points around your district, then “Finish boundary & import”.');
 
-    let points = [];                 // [L.LatLng]
+    let points = [];                 // drawn boundary [L.LatLng]
     const markers = [];
     let line = L.polyline([], { color: '#ff8a3d', weight: 2 }).addTo(map);
+    let cityRing = null;             // [[lng,lat],...] from a chosen city
+    let areaId = null;               // Overpass area id for the chosen city
+    let cityLayer = null;
+
+    function clearCity() {
+      if (cityLayer) { map.removeLayer(cityLayer); cityLayer = null; }
+      cityRing = null; areaId = null;
+    }
+    function clearDrawn() {
+      points = [];
+      markers.forEach(m => map.removeLayer(m)); markers.length = 0;
+      line.setLatLngs([]);
+    }
 
     map.on('click', e => {
+      clearCity();                   // drawing overrides a chosen city
       points.push(e.latlng);
       markers.push(L.circleMarker(e.latlng, { radius: 4, color: '#ff8a3d' }).addTo(map));
       line.setLatLngs(points.concat(points.length > 2 ? [points[0]] : []));
     });
 
     $('miClear').addEventListener('click', () => {
-      points = [];
-      markers.forEach(m => map.removeLayer(m)); markers.length = 0;
-      line.setLatLngs([]);
-      hint('Boundary cleared. Click to drop new points.');
+      clearDrawn(); clearCity();
+      hint('Boundary cleared. Click to draw, or search a city.');
     });
 
+    // --- City search ---
+    function selectCity(result) {
+      clearDrawn();
+      const ring = extractOuterRing(result.geojson);
+      if (!ring) { hint('That place has no usable boundary polygon.'); return; }
+      cityRing = ring;
+      areaId = result.osm_type === 'relation' ? 3600000000 + Number(result.osm_id) : null;
+      if (cityLayer) map.removeLayer(cityLayer);
+      cityLayer = L.polygon(ring.map(([lng, lat]) => [lat, lng]), { color: '#ff8a3d', weight: 2, fill: false }).addTo(map);
+      map.fitBounds(cityLayer.getBounds());
+      if (!$('miName').value.trim()) $('miName').value = result.name || (result.display_name || '').split(',')[0];
+      $('miCityResults').innerHTML = '';
+      hint(`Boundary set to “${(result.display_name || '').split(',').slice(0, 2).join(',')}”. Press “Finish boundary & import”.`);
+    }
+
+    async function doCitySearch() {
+      const q = $('miCity').value.trim();
+      if (!q) return;
+      $('miCityResults').innerHTML = '<div class="mi-city-row">Searching…</div>';
+      try {
+        const results = await geocodeCity(q);
+        if (!results.length) { $('miCityResults').innerHTML = '<div class="mi-city-row">No places with a boundary found.</div>'; return; }
+        $('miCityResults').innerHTML = '';
+        results.forEach(r => {
+          const row = document.createElement('div');
+          row.className = 'mi-city-row';
+          row.textContent = r.display_name;
+          row.addEventListener('click', () => selectCity(r));
+          $('miCityResults').appendChild(row);
+        });
+      } catch (err) {
+        $('miCityResults').innerHTML = `<div class="mi-city-row">${err.message}</div>`;
+      }
+    }
+    $('miCitySearch').addEventListener('click', doCitySearch);
+    $('miCity').addEventListener('keydown', e => { if (e.key === 'Enter') doCitySearch(); });
+
     $('miFinish').addEventListener('click', async () => {
-      if (points.length < 3) { hint('Drop at least 3 boundary points first.'); return; }
-      hint('Fetching streets from OpenStreetMap…');
+      const boundary = cityRing || (points.length >= 3 ? points.map(p => [p.lng, p.lat]) : null);
+      if (!boundary) { hint('Draw a boundary (3+ points) or search a city first.'); return; }
+      hint(areaId ? 'Fetching the whole city from OpenStreetMap… (can take a while)' : 'Fetching streets from OpenStreetMap…');
       $('miFinish').disabled = true;
       try {
-        const body = 'data=' + encodeURIComponent(overpassQuery(points));
-        const res = await fetch(OVERPASS_URL, { method: 'POST', body });
+        const query = areaId ? overpassAreaQuery(areaId) : overpassQuery(points);
+        const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
         if (!res.ok) throw new Error(`Overpass error ${res.status}`);
         const json = await res.json();
-        const boundary = points.map(p => [p.lng, p.lat]);  // [lng,lat] for clipping
-        draft.boundary = points.map(p => ({ lat: p.lat, lng: p.lng }));
+        draft.boundary = boundary.map(([lng, lat]) => ({ lat, lng }));
         draft.streets = overpassToStreets(json, boundary);
         draft.features = overpassToFeatures(json, boundary);
         renderList();
