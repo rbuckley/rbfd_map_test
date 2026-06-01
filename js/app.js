@@ -5,7 +5,7 @@ import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
 import { openBuilder } from './builder.js';
 import { openMapImporter } from './mapImporter.js';
-import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict } from './storage.js';
+import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict } from './storage.js';
 
 function gatherDom() {
   const $ = id => document.getElementById(id);
@@ -62,6 +62,8 @@ async function main() {
     });
     saveSelectedDistrict(id);
     renderPicker(id);
+    // Only user-created districts can be deleted.
+    document.getElementById('deleteDistrictBtn').style.display = currentSource === 'user' ? '' : 'none';
   }
 
   // Header: an <h1> title for a single district, or a <select> when there are
@@ -110,6 +112,13 @@ async function main() {
     if (!currentDistrict) return;
     // User districts edit in place; built-ins open as an editable duplicate.
     openBuilder({ existing: currentDistrict, editable: currentSource === 'user', onSaved: id => switchDistrict(id) });
+  });
+  document.getElementById('deleteDistrictBtn').addEventListener('click', () => {
+    if (currentSource !== 'user' || !currentDistrict) return;
+    if (!window.confirm(`Delete district “${currentDistrict.name}”? This removes it and its saved progress from this browser. (Exported files in the repo are not affected.)`)) return;
+    deleteUserDistrict(currentDistrict.id);
+    const next = (listDistricts()[0] || { id: DEFAULT_DISTRICT }).id;
+    switchDistrict(next);
   });
 
   // Pick the remembered district if it still exists, else the default.
