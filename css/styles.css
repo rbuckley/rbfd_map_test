@@ -218,6 +218,7 @@ body {
 .builder-bar {
   display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
   padding: 8px 10px; background: var(--panel); border-bottom: 2px solid var(--accent);
+  position: relative; z-index: 1200;   /* keep the city dropdown above the Leaflet map */
 }
 .builder-name {
   padding: 8px; background: #0a1420; color: var(--text);
@@ -227,7 +228,7 @@ body {
 .mi-check { font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .mi-city { position: relative; display: inline-flex; gap: 6px; align-items: center; }
 .mi-city-results {
-  position: absolute; top: 100%; left: 0; z-index: 5; margin-top: 4px;
+  position: absolute; top: 100%; left: 0; z-index: 1201; margin-top: 4px;
   width: min(420px, 80vw); max-height: 240px; overflow-y: auto;
   background: #0a1420; border: 1px solid #2d4a6f; border-radius: 6px;
 }
