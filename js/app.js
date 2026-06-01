@@ -26,6 +26,7 @@ function gatherDom() {
     reveal: $('reveal'),
     missed: $('missed'),
     resetView: $('resetView'),
+    rotate: $('rotateBtn'),
     testToggles: $('testToggles'),
     modeTabs: Array.from(document.querySelectorAll('#modeTabs .mode-tab')),
     selectionTabs: Array.from(document.querySelectorAll('#selectionTabs .mode-tab')),

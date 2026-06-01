@@ -483,6 +483,7 @@ export function createQuiz({ dom }) {
   dom.reveal.addEventListener('click', revealCurrent);
   dom.missed.addEventListener('click', retryMissed);
   dom.resetView.addEventListener('click', () => mapView && mapView.resetView());
+  dom.rotate.addEventListener('click', () => mapView && mapView.rotate());
   dom.submitAns.addEventListener('click', submitAnswer);
   dom.skip.addEventListener('click', skipCurrent);
   dom.excludeBtn.addEventListener('click', excludeCurrent);

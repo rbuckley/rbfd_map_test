@@ -4,15 +4,47 @@
 export function createMapView(svg) {
   const wrap = svg.parentElement;
   const vbAttr = svg.getAttribute('viewBox').split(/\s+/).map(parseFloat);
-  const baseVB = { x: vbAttr[0], y: vbAttr[1], w: vbAttr[2], h: vbAttr[3] };
+  const baseVB0 = { x: vbAttr[0], y: vbAttr[1], w: vbAttr[2], h: vbAttr[3] }; // unrotated
+  const cx = baseVB0.x + baseVB0.w / 2, cy = baseVB0.y + baseVB0.h / 2;
+
+  // Wrap all content in a group we can rotate. Rotating the content (rather
+  // than CSS-rotating the <svg>) keeps pan/zoom axis-aligned with the screen.
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  let rotG = svg.querySelector('.__maprot');
+  if (!rotG) {
+    rotG = document.createElementNS(SVGNS, 'g');
+    rotG.setAttribute('class', '__maprot');
+    while (svg.firstChild) rotG.appendChild(svg.firstChild);
+    svg.appendChild(rotG);
+  }
+  let angle = 0;
+  // For 90°/270° the visible extent is the original box with width/height
+  // swapped (same centre), so the rotated map still fills the frame.
+  const baseForAngle = () => (angle % 180 === 0)
+    ? { ...baseVB0 }
+    : { x: cx - baseVB0.h / 2, y: cy - baseVB0.w / 2, w: baseVB0.h, h: baseVB0.w };
+  let baseVB = baseForAngle();
   let vb = { ...baseVB };
 
   function applyVB() {
     svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
   }
   function resetView() {
+    baseVB = baseForAngle();
     vb = { ...baseVB };
     applyVB();
+  }
+  // Map a content-space point to its on-screen (root) position under rotation.
+  function rotatePoint(px, py) {
+    if (!angle) return [px, py];
+    const rad = angle * Math.PI / 180, c = Math.cos(rad), s = Math.sin(rad);
+    const dx = px - cx, dy = py - cy;
+    return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+  }
+  function rotate() {
+    angle = (angle + 90) % 360;
+    rotG.setAttribute('transform', angle ? `rotate(${angle} ${cx} ${cy})` : '');
+    resetView();
   }
 
   // Zoom (mouse wheel)
@@ -90,11 +122,11 @@ export function createMapView(svg) {
   });
 
   // Pan the viewBox so a street is centered, but only if it's outside view.
+  // The street's bbox is in content space, so rotate its centre to screen space.
   function panToStreet(g) {
     if (!g) return;
     const bbox = g.getBBox();
-    const sx = bbox.x + bbox.width / 2;
-    const sy = bbox.y + bbox.height / 2;
+    const [sx, sy] = rotatePoint(bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
     if (sx < vb.x + vb.w * 0.1 || sx > vb.x + vb.w * 0.9 ||
         sy < vb.y + vb.h * 0.1 || sy > vb.y + vb.h * 0.9) {
       vb.x = sx - vb.w / 2;
@@ -104,5 +136,5 @@ export function createMapView(svg) {
   }
 
   applyVB();
-  return { resetView, panToStreet };
+  return { resetView, panToStreet, rotate };
 }
