@@ -176,9 +176,10 @@ export function overpassToStreets(json, boundary) {
   return [...byName.entries()].map(([name, segments]) => ({ name, segments }));
 }
 
-// Park / school / water area polygons for shading, clipped to the boundary.
+// Park / school / water area polygons for shading, kept if inside the boundary.
 export function overpassToFeatures(json, boundary) {
-  const clipRing = (boundary && boundary.length >= 3) ? ensureCCW(boundary) : null;
+  const hasBoundary = boundary && boundary.length >= 3;
+  const clipRing = hasBoundary ? ensureCCW(boundary) : null;
   const feats = [];
   for (const el of (json.elements || [])) {
     if (el.type !== 'way' || !el.tags || !el.geometry) continue;
@@ -188,10 +189,26 @@ export function overpassToFeatures(json, boundary) {
     else if (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') type = 'water';
     if (!type) continue;
     let ring = el.geometry.map(g => [g.lon, g.lat]);
-    if (clipRing) { ring = clipPolygonToPolygon(ring, clipRing); if (ring.length < 3) continue; }
+    if (ring.length < 3) continue;
+    if (hasBoundary) {
+      // Keep areas inside the boundary (concave-safe inclusion). Clip the shape
+      // when that yields a valid polygon, but never drop a clearly-inside area
+      // just because Sutherland–Hodgman (convex-only) collapses on a concave
+      // boundary — fall back to the full polygon instead.
+      const inside = pointInPolygon(centroid(ring), boundary) || ring.some(p => pointInPolygon(p, boundary));
+      if (!inside) continue;
+      const clipped = clipPolygonToPolygon(ring, clipRing);
+      if (clipped.length >= 3) ring = clipped;
+    }
     feats.push({ type, polygon: ring.map(([lon, lat]) => project(lat, lon)) });
   }
   return feats;
+}
+
+function centroid(ring) {
+  let x = 0, y = 0;
+  for (const p of ring) { x += p[0]; y += p[1]; }
+  return [x / ring.length, y / ring.length];
 }
 
 function loadLeaflet() {
