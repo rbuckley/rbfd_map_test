@@ -4,16 +4,18 @@
 // exclusions, confusion groups) and the rendered SVG are injected, so this
 // engine is map-agnostic.
 
-export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
-  const STREET_NAMES = district.streets;
-  const SISTER_STREETS = district.confusionGroups.sisterStreets;
-  const GEM_STREETS = district.confusionGroups.gemStreets;
-  const LETTER_AVENUES = district.confusionGroups.letterAvenues;
-
-  // Default (map-author) exclusions can be re-included at runtime, so keep them
-  // in a mutable Set rather than treating them as constant.
-  const defaultExcluded = new Set(district.excluded);
-  const userExcluded = new Set(initial.userExcluded || []);
+export function createQuiz({ dom }) {
+  // Per-district refs — (re)assigned by setDistrict so we can switch districts
+  // without re-wiring the persistent controls.
+  let district = null;
+  let svg = null;
+  let mapView = null;
+  let persist = () => {};
+  let STREET_NAMES = [];
+  let confusionGroupList = [];   // array of name-arrays (any number of groups)
+  let defaultExcluded = new Set();
+  let userExcluded = new Set();
+  let streetEls = {};
 
   // --- State ---
   let mode = 'explore';          // 'explore' | 'test'
@@ -21,9 +23,9 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
   let answerMethod = 'dropdown'; // 'dropdown' | 'type' (Test only)
   let currentKind = null;        // 'random' | 'retry' | 'click' — the live question's kind
   let target = null;
-  let correct = initial.correct || 0;
-  let total = initial.total || 0;
-  let missed = new Set(initial.missed || []);
+  let correct = 0;
+  let total = 0;
+  let missed = new Set();
   let asked = new Set();
   let useMissedPool = false;
 
@@ -31,15 +33,57 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     persist({ correct, total, missed, userExcluded });
   }
 
-  // --- Build the street element index from the injected SVG ---
-  const streetEls = {};
-  svg.querySelectorAll('.street').forEach(g => {
-    streetEls[g.dataset.name] = g;
-    g.addEventListener('click', e => {
-      e.stopPropagation();
-      handleStreetClick(g.dataset.name);
+  // Reset the mode / selection / answer tab highlights to match state.
+  function syncTabUI() {
+    dom.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+    dom.selectionTabs.forEach(t => t.classList.toggle('active', t.dataset.selection === selection));
+    dom.answerTabs.forEach(t => t.classList.toggle('active', t.dataset.answer === answerMethod));
+  }
+
+  // Load (or switch to) a district: rebind data + SVG and reset quiz state.
+  function setDistrict(opts) {
+    district = opts.district;
+    svg = opts.svg;
+    mapView = opts.mapView;
+    persist = opts.persist;
+    const initial = opts.initial || {};
+
+    STREET_NAMES = district.streets;
+    confusionGroupList = Object.values(district.confusionGroups || {});
+    defaultExcluded = new Set(district.excluded || []);
+    userExcluded = new Set(initial.userExcluded || []);
+
+    correct = initial.correct || 0;
+    total = initial.total || 0;
+    missed = new Set(initial.missed || []);
+    asked = new Set();
+    useMissedPool = false;
+    target = null;
+    currentKind = null;
+    mode = 'explore';
+    selection = 'random';
+    answerMethod = 'dropdown';
+    syncTabUI();
+
+    // Build the street element index from the injected SVG.
+    streetEls = {};
+    svg.querySelectorAll('.street').forEach(g => {
+      streetEls[g.dataset.name] = g;
+      g.addEventListener('click', e => {
+        e.stopPropagation();
+        handleStreetClick(g.dataset.name);
+      });
     });
-  });
+
+    clearAllMarksComplete();
+    updateScore();
+    updateExclusionCount();
+    applyControlVisibility();
+    dom.inputRow.style.display = 'none';
+    dom.testToggles.style.display = 'none';
+    showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
+    showFeedback('');
+  }
 
   function clearAllMarks() {
     svg.querySelectorAll('.street').forEach(g => {
@@ -185,8 +229,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
 
     // Prioritize confusion-group siblings as distractors.
     let prioritized = [];
-    const groups = [SISTER_STREETS, GEM_STREETS, LETTER_AVENUES];
-    for (const grp of groups) {
+    for (const grp of confusionGroupList) {
       if (grp.includes(answer)) {
         prioritized = grp.filter(n => n !== answer && active.includes(n));
         break;
@@ -439,7 +482,7 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
   dom.newQ.addEventListener('click', startNew);
   dom.reveal.addEventListener('click', revealCurrent);
   dom.missed.addEventListener('click', retryMissed);
-  dom.resetView.addEventListener('click', mapView.resetView);
+  dom.resetView.addEventListener('click', () => mapView && mapView.resetView());
   dom.submitAns.addEventListener('click', submitAnswer);
   dom.skip.addEventListener('click', skipCurrent);
   dom.excludeBtn.addEventListener('click', excludeCurrent);
@@ -452,9 +495,5 @@ export function createQuiz({ district, svg, mapView, dom, persist, initial }) {
     if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
   });
 
-  // --- Initial render ---
-  updateScore();
-  updateExclusionCount();
-  applyControlVisibility();
-  showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
+  return { setDistrict };
 }

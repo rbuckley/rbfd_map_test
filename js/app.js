@@ -1,9 +1,9 @@
-// Bootstrap: pick a district, load its map + data, render the SVG, then wire up
-// the map view and quiz engine.
-import { DEFAULT_DISTRICT, loadDistrict } from './districts.js';
+// Bootstrap: build the district picker, load the selected district's map +
+// data, render the SVG, and (re)point the quiz engine at it on each switch.
+import { DEFAULT_DISTRICT, loadDistrict, listDistricts } from './districts.js';
 import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
-import { loadProgress, saveProgress } from './storage.js';
+import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict } from './storage.js';
 
 function gatherDom() {
   const $ = id => document.getElementById(id);
@@ -32,32 +32,57 @@ function gatherDom() {
 }
 
 async function main() {
-  const districtId = DEFAULT_DISTRICT;
   const mapWrap = document.querySelector('.map-wrap');
+  const quiz = createQuiz({ dom: gatherDom() });
 
-  let district;
-  try {
-    district = await loadDistrict(districtId);
-  } catch (err) {
-    mapWrap.innerHTML = `<div style="padding:24px;color:var(--red)">Failed to load map data: ${err.message}<br><br>This app must be served over HTTP (e.g. a local server or GitHub Pages), not opened directly from the filesystem.</div>`;
-    return;
+  // Load a district and (re)point the quiz + map view at it.
+  async function switchDistrict(id) {
+    let district;
+    try {
+      district = await loadDistrict(id);
+    } catch (err) {
+      mapWrap.innerHTML = `<div style="padding:24px;color:var(--red)">Failed to load map data: ${err.message}<br><br>This app must be served over HTTP (e.g. a local server or GitHub Pages), not opened directly from the filesystem.</div>`;
+      return;
+    }
+    mapWrap.innerHTML = district.svgMarkup;
+    const svg = mapWrap.querySelector('#map');
+    const mapView = createMapView(svg);
+    quiz.setDistrict({
+      district,
+      svg,
+      mapView,
+      initial: loadProgress(id),
+      persist: state => saveProgress(id, state),
+    });
+    saveSelectedDistrict(id);
+    renderPicker(id);
   }
 
-  // Inject the SVG map into the page.
-  mapWrap.innerHTML = district.svgMarkup;
-  const svg = mapWrap.querySelector('#map');
+  // Header: an <h1> title for a single district, or a <select> when there are
+  // several. Re-rendered after each switch so the current district stays shown.
+  function renderPicker(currentId) {
+    const districts = listDistricts();
+    const container = document.getElementById('districtTitle');
+    const current = districts.find(d => d.id === currentId);
+    if (districts.length <= 1) {
+      container.innerHTML = `<h1>RBFD Map Test${current ? ' - ' + current.name : ''}</h1>`;
+      return;
+    }
+    const sel = document.createElement('select');
+    sel.id = 'districtPicker';
+    sel.innerHTML = districts
+      .map(d => `<option value="${d.id}"${d.id === currentId ? ' selected' : ''}>${d.name}</option>`)
+      .join('');
+    sel.addEventListener('change', () => switchDistrict(sel.value));
+    container.innerHTML = '';
+    container.appendChild(sel);
+  }
 
-  const mapView = createMapView(svg);
-  const initial = loadProgress(districtId);
-
-  createQuiz({
-    district,
-    svg,
-    mapView,
-    dom: gatherDom(),
-    initial,
-    persist: state => saveProgress(districtId, state),
-  });
+  // Pick the remembered district if it still exists, else the default.
+  const remembered = loadSelectedDistrict();
+  const known = new Set(listDistricts().map(d => d.id));
+  const startId = (remembered && known.has(remembered)) ? remembered : DEFAULT_DISTRICT;
+  await switchDistrict(startId);
 }
 
 // Register the service worker for offline / installable use (no-op on file://).

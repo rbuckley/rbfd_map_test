@@ -71,3 +71,53 @@ export function clearProgress(districtId) {
   } catch { /* ignore */ }
   delete memory[districtId];
 }
+
+// --- Generic keyed JSON (used for the district store + selected district) ---
+function readKey(key, fallback) {
+  try {
+    const raw = useLocal ? localStorage.getItem(key) : memory[key];
+    if (raw == null) return fallback;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    return fallback;
+  }
+}
+function writeKey(key, value) {
+  try {
+    if (useLocal) localStorage.setItem(key, JSON.stringify(value));
+    else memory[key] = value;
+  } catch {
+    memory[key] = value;
+  }
+}
+
+const DISTRICTS_KEY = `${KEY_PREFIX}districts`;
+const SELECTED_KEY = `${KEY_PREFIX}selectedDistrict`;
+
+// User-created districts: a map keyed by id. Each value is a full district
+// record { id, name, viewBox, streets, excluded, confusionGroups, svgMarkup,
+// refImage? } so it can be rendered without any network fetch.
+export function loadUserDistricts() {
+  return readKey(DISTRICTS_KEY, {});
+}
+export function getUserDistrict(id) {
+  return loadUserDistricts()[id] || null;
+}
+export function saveUserDistrict(record) {
+  const all = loadUserDistricts();
+  all[record.id] = record;
+  writeKey(DISTRICTS_KEY, all);
+}
+export function deleteUserDistrict(id) {
+  const all = loadUserDistricts();
+  delete all[id];
+  writeKey(DISTRICTS_KEY, all);
+  clearProgress(id);
+}
+
+export function loadSelectedDistrict() {
+  return readKey(SELECTED_KEY, null);
+}
+export function saveSelectedDistrict(id) {
+  writeKey(SELECTED_KEY, id);
+}

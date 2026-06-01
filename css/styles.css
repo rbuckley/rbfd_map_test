@@ -30,7 +30,15 @@ body {
   border-bottom: 2px solid var(--accent);
   flex: 0 0 auto;
 }
-.header h1 { font-size: 14px; font-weight: 700; flex: 1; min-width: 100px; }
+.title { flex: 1; min-width: 100px; }
+.header h1 { font-size: 14px; font-weight: 700; }
+#districtPicker {
+  font-size: 14px; font-weight: 700; font-family: inherit;
+  color: var(--text); background: #0a1420;
+  border: 1px solid var(--accent2); border-radius: 6px;
+  padding: 6px 8px; max-width: 100%;
+}
+#districtPicker:focus { border-color: var(--accent); outline: none; }
 .score { font-size: 13px; color: var(--dim); white-space: nowrap; }
 .score b { color: var(--accent); }
 .controls {
