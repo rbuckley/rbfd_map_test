@@ -121,3 +121,20 @@ export function loadSelectedDistrict() {
 export function saveSelectedDistrict(id) {
   writeKey(SELECTED_KEY, id);
 }
+
+// All user-created districts serialized as one JSON string (for a backup /
+// hand-off file that can be re-imported or committed to the repo).
+export function exportDistrictsBundle() {
+  return JSON.stringify(loadUserDistricts(), null, 2);
+}
+
+// Merge a bundle (map of id -> district record) back into the store.
+export function importDistrictsBundle(bundle) {
+  const all = loadUserDistricts();
+  let n = 0;
+  for (const [id, rec] of Object.entries(bundle || {})) {
+    if (rec && rec.id) { all[id] = rec; n++; }
+  }
+  writeKey(DISTRICTS_KEY, all);
+  return n;
+}

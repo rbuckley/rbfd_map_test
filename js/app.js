@@ -5,7 +5,7 @@ import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
 import { openBuilder } from './builder.js';
 import { openMapImporter } from './mapImporter.js';
-import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict } from './storage.js';
+import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict, exportDistrictsBundle, importDistrictsBundle } from './storage.js';
 
 function gatherDom() {
   const $ = id => document.getElementById(id);
@@ -113,6 +113,38 @@ async function main() {
     if (!currentDistrict) return;
     // User districts edit in place; built-ins open as an editable duplicate.
     openBuilder({ existing: currentDistrict, editable: currentSource === 'user', onSaved: id => switchDistrict(id) });
+  });
+  // Export every created district as one .json (backup / hand-off / commit).
+  document.getElementById('exportAllBtn').addEventListener('click', () => {
+    const json = exportDistrictsBundle();
+    if (Object.keys(JSON.parse(json)).length === 0) {
+      window.alert('No created districts to export yet. Make one with “＋ District” first.');
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+    a.download = 'districts-backup.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  // Import a previously-exported bundle back into this browser.
+  document.getElementById('importAllInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const bundle = JSON.parse(reader.result);
+        const n = importDistrictsBundle(bundle);
+        window.alert(`Imported ${n} district(s).`);
+        const firstId = Object.keys(bundle)[0];
+        if (firstId) switchDistrict(firstId); else renderPicker(currentDistrict && currentDistrict.id);
+      } catch (err) {
+        window.alert('Could not read that file: ' + err.message);
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
   });
   document.getElementById('deleteDistrictBtn').addEventListener('click', () => {
     if (currentSource !== 'user' || !currentDistrict) return;
