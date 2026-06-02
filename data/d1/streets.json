@@ -2,7 +2,7 @@
   "id": "d1",
   "name": "District 1",
   "map": "data/d1/map.svg",
-  "viewBox": "-13180230.2 -4009988.7 3269.6 6281.3",
+  "viewBox": "-13180267 -4010001.8 3289.8 6294.9",
   "streets": [
     "North Paulina Avenue",
     "North Guadalupe Avenue",
@@ -52,7 +52,6 @@
     "Francisca Avenue",
     "North Francisca Avenue",
     "North Lucia Avenue",
-    "Harkness Lane",
     "Central Court",
     "Yacht Club Way",
     "Serpentine Street",
@@ -104,12 +103,14 @@
     "Coral Way",
     "Loma Drive",
     "Prospect Place",
+    "Flagler Lane",
     "Marina Way",
     "North Pacific Avenue",
     "Monterey Boulevard",
     "Valley Drive",
     "Calle Miramar",
-    "Goodman Avenue"
+    "Goodman Avenue",
+    "Harkness Lane"
   ],
   "excluded": [],
   "confusionGroups": {}
