@@ -397,19 +397,32 @@ export function openMapImporter({ onSaved } = {}) {
 
     // Draw the previewed streets/areas for a fetched Overpass result.
     const FILL = { park: ['#2d5a3d', '#1f3d2c'], school: ['#5a4d2d', '#3d3320'], water: ['#2c5a73', '#15455e'] };
-    function previewOverpass(json) {
+    // Preview exactly what will be imported: streets/areas clipped to the same
+    // boundaries used on save, so "what you see" matches "what you get".
+    function previewOverpass(json, ...boundaries) {
+      const clips = boundaries.filter(b => b && b.length >= 3);
+      const drawArea = (t, ring0) => {
+        let ring = ring0, ok = true;
+        for (const c of clips) {
+          if (!(pointInPolygon(centroid(ring), c) || ring.some(p => pointInPolygon(p, c)))) { ok = false; break; }
+          const cl = clipPolygonToPolygon(ring, ensureCCW(c));
+          if (cl.length >= 3) ring = cl;
+        }
+        if (ok && ring.length >= 3) L.polygon(ring.map(([lon, lat]) => [lat, lon]), { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
+      };
       for (const el of json.elements) {
         if (!el.tags) continue;
         const t = featureType(el.tags);
         if (el.type === 'way' && el.geometry) {
-          const latlngs = el.geometry.map(g => [g.lat, g.lon]);
-          if (t) L.polygon(latlngs, { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
-          else if (el.tags.highway) L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
-        } else if (el.type === 'relation' && t) {
-          const outer = (el.members || []).filter(m => m.type === 'way' && (m.role === 'outer' || !m.role) && m.geometry).map(m => m.geometry.map(g => [g.lon, g.lat]));
-          for (const ring of assembleRings(outer)) {
-            L.polygon(ring.map(([lon, lat]) => [lat, lon]), { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
+          const pts = el.geometry.map(g => [g.lon, g.lat]);
+          if (t) drawArea(t, pts);
+          else if (el.tags.highway) {
+            let subs = [pts];
+            for (const c of clips) subs = subs.flatMap(s => clipPolylineToPolygon(s, c));
+            for (const s of subs) if (s.length >= 2) L.polyline(s.map(([lon, lat]) => [lat, lon]), { color: '#5fa8d3', weight: 1.5 }).addTo(map);
           }
+        } else if (el.type === 'relation' && t) {
+          for (const ring of assembleRings(relationOuterWays(el))) drawArea(t, ring);
         }
       }
     }
@@ -465,7 +478,7 @@ export function openMapImporter({ onSaved } = {}) {
         if (!res.ok) throw new Error(`Overpass error ${res.status}`);
         const json = await res.json();
         cityJson = json;
-        previewOverpass(json);
+        previewOverpass(json, boundary);
 
         if (subdivide) {
           // Keep the city as a reference; draw sub-districts and create each,
