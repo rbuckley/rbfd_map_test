@@ -157,16 +157,16 @@ async function geocodeCity(query) {
   return arr.filter(r => r.geojson && (r.geojson.type === 'Polygon' || r.geojson.type === 'MultiPolygon'));
 }
 
-// Convert an Overpass JSON response into street records grouped by name. When a
-// boundary ([[lng,lat],...]) is given, each road is clipped to it so streets
-// stop at the drawn border.
-export function overpassToStreets(json, boundary) {
-  const clip = boundary && boundary.length >= 3;
+// Convert an Overpass JSON response into street records grouped by name. Each
+// road is clipped to every boundary passed ([[lng,lat],...]), so streets stop
+// at the (intersection of the) border(s) — e.g. a sub-area AND the city limit.
+export function overpassToStreets(json, ...boundaries) {
+  const clips = boundaries.filter(b => b && b.length >= 3);
   const byName = new Map();
   for (const el of (json.elements || [])) {
     if (el.type !== 'way' || !el.tags || !el.tags.highway || !el.tags.name || !el.geometry) continue;
-    const pts = el.geometry.map(g => [g.lon, g.lat]);
-    const subs = clip ? clipPolylineToPolygon(pts, boundary) : [pts];
+    let subs = [el.geometry.map(g => [g.lon, g.lat])];
+    for (const clip of clips) subs = subs.flatMap(s => clipPolylineToPolygon(s, clip));
     for (const sub of subs) {
       if (sub.length < 2) continue;
       if (!byName.has(el.tags.name)) byName.set(el.tags.name, []);
@@ -221,19 +221,18 @@ export function assembleRings(ways) {
 }
 
 // Park / school / water area polygons for shading (ways + multipolygon
-// relations), kept if inside the boundary.
-export function overpassToFeatures(json, boundary) {
-  const hasBoundary = boundary && boundary.length >= 3;
-  const clipRing = hasBoundary ? ensureCCW(boundary) : null;
+// relations), kept if inside every boundary passed.
+export function overpassToFeatures(json, ...boundaries) {
+  const clips = boundaries.filter(b => b && b.length >= 3).map(b => ({ ring: b, ccw: ensureCCW(b) }));
   const feats = [];
   const addRing = (type, ring) => {
     if (ring.length < 3) return;
     let r = ring;
-    if (hasBoundary) {
+    for (const { ring: b, ccw } of clips) {
       // Concave-safe inclusion; clip the shape only when that stays valid.
-      const inside = pointInPolygon(centroid(r), boundary) || r.some(p => pointInPolygon(p, boundary));
+      const inside = pointInPolygon(centroid(r), b) || r.some(p => pointInPolygon(p, b));
       if (!inside) return;
-      const clipped = clipPolygonToPolygon(r, clipRing);
+      const clipped = clipPolygonToPolygon(r, ccw);
       if (clipped.length >= 3) r = clipped;
     }
     feats.push({ type, polygon: r.map(([lon, lat]) => project(lat, lon)) });
@@ -370,6 +369,7 @@ export function openMapImporter({ onSaved } = {}) {
     let areaId = null;               // Overpass area id for the chosen city
     let cityJson = null;             // cached Overpass result (for subdividing)
     let subdividing = false;         // after a pull, draw sub-districts
+    let subdivideOuter = null;       // the pulled area's boundary ([lng,lat]) — clips sub-districts to the city
     let cityLayer = null;
 
     function clearCity() {
@@ -468,8 +468,10 @@ export function openMapImporter({ onSaved } = {}) {
         previewOverpass(json);
 
         if (subdivide) {
-          // Keep the city as a reference; draw sub-districts and create each.
+          // Keep the city as a reference; draw sub-districts and create each,
+          // clipping each one to the city boundary as well as the drawn sub-area.
           subdividing = true;
+          subdivideOuter = boundary;
           clearDrawn();
           $('miFinish').style.display = 'none';
           $('miCreate').style.display = '';
@@ -504,8 +506,8 @@ export function openMapImporter({ onSaved } = {}) {
       const name = $('miName').value.trim();
       if (!name) { hint('Enter a name for this district first.'); return; }
       const subPoly = points.map(p => [p.lng, p.lat]);
-      const streets = overpassToStreets(cityJson, subPoly);
-      const features = overpassToFeatures(cityJson, subPoly);
+      const streets = overpassToStreets(cityJson, subPoly, subdivideOuter);
+      const features = overpassToFeatures(cityJson, subPoly, subdivideOuter);
       if (!streets.length) { hint('No streets fell inside that sub-area. Try again.'); return; }
       const id = nextDistrictId(name);
       const record = buildDistrictRecord({
