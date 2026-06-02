@@ -10,6 +10,11 @@ export const DISTRICTS = [
     name: 'District 1',
     config: 'data/d1/streets.json',
   },
+  {
+    id: 'd2',
+    name: 'District 2',
+    config: 'data/d2/streets.json',
+  },
 ];
 
 // The district shown on first load (or when no saved preference exists).

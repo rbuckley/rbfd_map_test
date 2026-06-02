@@ -18,8 +18,9 @@ js/
   quiz.js               Explore/Quiz/Test logic, scoring, exclusions
   storage.js            localStorage persistence (graceful in-memory fallback)
 data/
-  d1/
-    map.svg             The District 1 vector map
+  d1/                   District 1 (map.svg + streets.json)
+  d2/                   District 2
+    map.svg             Vector map (streets + park/school/water shading)
     streets.json        Street names, default exclusions, confusion groups
 manifest.webmanifest    PWA manifest (installable)
 sw.js                   Service worker (offline caching)
