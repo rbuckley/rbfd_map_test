@@ -133,6 +133,55 @@ export function overpassAreaQuery(areaId) {
   return `[out:json][timeout:180];area(${areaId})->.a;(${FEATURE_FILTERS('(area.a)')});out geom;`;
 }
 
+// --- Experimental: address-block coverage probe ---
+// Pull address points (nodes + building centers) carrying addr:housenumber +
+// addr:street, to gauge whether 100-block data exists for an "advanced" mode.
+export function addressQuery(polyLatLng) {
+  const f = `(poly:"${polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ')}")`;
+  return `[out:json][timeout:120];(node["addr:housenumber"]["addr:street"]${f};way["addr:housenumber"]["addr:street"]${f};);out center;`;
+}
+export function addressAreaQuery(areaId) {
+  return `[out:json][timeout:180];area(${areaId})->.a;(node["addr:housenumber"]["addr:street"](area.a);way["addr:housenumber"]["addr:street"](area.a););out center;`;
+}
+
+// Group addresses by street into 100-blocks (234 -> 200). Returns
+// { street: { blocks:[100,200,...], count } }, clipped to the boundary.
+export function addressesToBlocks(json, boundary) {
+  const hasB = boundary && boundary.length >= 3;
+  const map = {};
+  for (const el of (json.elements || [])) {
+    const t = el.tags; if (!t) continue;
+    const hn = t['addr:housenumber'], street = t['addr:street'];
+    if (!hn || !street) continue;
+    const num = parseInt(hn, 10);
+    if (!Number.isFinite(num)) continue;
+    const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    if (lon == null || lat == null) continue;
+    if (hasB && !pointInPolygon([lon, lat], boundary)) continue;
+    const block = Math.floor(num / 100) * 100;
+    const e = map[street] || (map[street] = { blocks: new Set(), count: 0 });
+    e.blocks.add(block); e.count++;
+  }
+  const out = {};
+  for (const [s, e] of Object.entries(map)) out[s] = { blocks: [...e.blocks].sort((a, b) => a - b), count: e.count };
+  return out;
+}
+
+// Human-readable coverage report; cross-references the district's street list
+// (note: addr:street names may differ slightly from highway names).
+export function blockCoverageReport(blockMap, districtStreets = []) {
+  const streets = Object.keys(blockMap).sort();
+  const totalAddr = streets.reduce((n, s) => n + blockMap[s].count, 0);
+  const lines = [`Address-block coverage`, `${streets.length} streets with addresses, ${totalAddr} addresses total.`, ''];
+  for (const s of streets) lines.push(`${s}: ${blockMap[s].blocks.join(', ')} block(s)  [${blockMap[s].count} addr]`);
+  if (districtStreets.length) {
+    const missing = districtStreets.filter(n => !blockMap[n]).sort();
+    lines.push('', `District streets with NO matching address data (${missing.length}/${districtStreets.length}):`, missing.join(', ') || '(none)');
+  }
+  return lines.join('\n');
+}
+
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
 function ringArea(ring) {
@@ -334,6 +383,7 @@ export function openMapImporter({ onSaved } = {}) {
       <button id="miFinish" class="btn primary">Finish boundary &amp; import</button>
       <button id="miCreate" class="btn primary" style="display:none;">Create district from area</button>
       <button id="miClear" class="btn">Clear boundary</button>
+      <button id="miAddr" class="btn">🏠 Address coverage</button>
       <span style="flex:1"></span>
       <button id="miSave" class="btn primary" disabled>Save</button>
       <button id="miExport" class="btn" disabled>Export</button>
@@ -522,6 +572,35 @@ export function openMapImporter({ onSaved } = {}) {
     }
     $('miCitySearch').addEventListener('click', doCitySearch);
     $('miCity').addEventListener('keydown', e => { if (e.key === 'Enter') doCitySearch(); });
+
+    // Experimental: probe OSM address-block coverage for the current boundary.
+    $('miAddr').addEventListener('click', async () => {
+      const boundary = cityRing || (points.length >= 3 ? points.map(p => [p.lng, p.lat]) : null);
+      if (!boundary) { hint('Select a city or draw a boundary first, then check address coverage.'); return; }
+      hint('Fetching address data from OpenStreetMap… (can take a while)');
+      $('miAddr').disabled = true;
+      try {
+        const query = areaId ? addressAreaQuery(areaId) : addressQuery(points);
+        const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+        if (!res.ok) throw new Error(`Overpass error ${res.status}`);
+        const json = await res.json();
+        const blocks = addressesToBlocks(json, boundary);
+        const districtStreets = (cityJson ? overpassToStreets(cityJson, boundary) : draft.streets).map(s => s.name);
+        const report = blockCoverageReport(blocks, districtStreets);
+        const withAddr = Object.keys(blocks).length;
+        const totalAddr = Object.values(blocks).reduce((n, e) => n + e.count, 0);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([report], { type: 'text/plain' }));
+        a.download = 'address-coverage.txt';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        hint(`Address coverage: ${withAddr} streets, ${totalAddr} addresses. Downloaded address-coverage.txt — send it over.`);
+      } catch (err) {
+        hint(`Address check failed: ${err.message}. (Needs an internet connection.)`);
+      } finally {
+        $('miAddr').disabled = false;
+      }
+    });
 
     const featSummary = feats => {
       const c = {};
