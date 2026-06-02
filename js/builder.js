@@ -8,14 +8,21 @@ import { saveUserDistrict, loadUserDistricts } from './storage.js';
 import { DISTRICTS } from './districts.js';
 
 const STREET_STROKE = '#9bb4cc';
-// Filled background areas, matching the District 1 palette.
-const AREA_STYLE = {
-  water: { fill: '#15455e', stroke: '#2c5a73', width: 1 },
-  park: { fill: '#1f3d2c', stroke: '#2d5a3d', width: 1 },
-  school: { fill: '#3d3320', stroke: '#5a4d2d', width: 0.8 },
+// Map features, matching the District 1 palette. Areas are filled; lines
+// (piers, breakwaters, slipways) are stroked. `rank` sets draw order (low =
+// furthest back); lines sit on top of the filled areas.
+export const FEATURE_STYLE = {
+  water:      { fill: '#15455e', stroke: '#2c5a73', width: 1, rank: 0 },
+  marina:     { fill: '#1d4a5a', stroke: '#3a7a93', width: 1, rank: 1 },
+  park:       { fill: '#1f3d2c', stroke: '#2d5a3d', width: 1, rank: 2 },
+  school:     { fill: '#3d3320', stroke: '#5a4d2d', width: 0.8, rank: 3 },
+  fire_station: { fill: '#5a2222', stroke: '#a83232', width: 1, marker: '#e23b3b', rank: 5 },
+  hospital:   { fill: '#3a2a4a', stroke: '#7a5a9a', width: 1, marker: '#c45ad0', rank: 5 },
+  pier:       { fill: '#5a4a30', stroke: '#8b6c3f', width: 1, lineStroke: '#8b6c3f', lineWidth: 3, rank: 10 },
+  breakwater: { fill: '#4a4a42', stroke: '#7a7a6a', width: 1, lineStroke: '#7a7a6a', lineWidth: 3, rank: 11 },
+  slipway:    { fill: '#5a4a30', stroke: '#8b6c3f', width: 1, lineStroke: '#8b6c3f', lineWidth: 2, rank: 12 },
 };
-// Draw order (low = furthest back): water under parks under schools.
-const AREA_RANK = { water: 0, park: 1, school: 2 };
+const featStyle = type => FEATURE_STYLE[type] || FEATURE_STYLE.park;
 const round = n => Math.round(n * 10) / 10;
 const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
@@ -41,10 +48,13 @@ export function buildDistrictRecord(draft) {
   const features = draft.features || [];
   // Bounding box over every street + area point (loop, not spread, to stay
   // safe for large point counts).
+  // Feature geometry is f.points (areas + lines); older saved records used
+  // f.polygon for filled areas — support both.
+  const featPts = f => f.points || f.polygon || [];
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity, any = false;
   const grow = (x, y) => { any = true; if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; };
   for (const st of draft.streets) for (const seg of st.segments) for (const [x, y] of seg) grow(x, y);
-  for (const f of features) for (const [x, y] of f.polygon) grow(x, y);
+  for (const f of features) for (const [x, y] of featPts(f)) grow(x, y);
 
   let vb;
   if (any) {
@@ -54,15 +64,27 @@ export function buildDistrictRecord(draft) {
     vb = `0 0 ${draft.imgW || 1000} ${draft.imgH || 1000}`;
   }
   const [vx, vy, vw, vh] = vb.split(' ');
+  const markerR = Math.max(8, 0.006 * Math.max(parseFloat(vw), parseFloat(vh)));
 
-  // Filled water/park/school areas, drawn behind the streets (water furthest
-  // back) and non-interactive.
-  const ordered = [...features].sort((a, b) => (AREA_RANK[a.type] ?? 1) - (AREA_RANK[b.type] ?? 1));
+  // Map features, drawn behind the streets and non-interactive. Areas are
+  // filled; lines (piers etc.) are stroked; points (fire stations/hospitals)
+  // are markers. Lines/points sit on top of the fills.
+  const ordered = [...features].sort((a, b) => (featStyle(a.type).rank ?? 5) - (featStyle(b.type).rank ?? 5));
   const areaPaths = ordered.map(f => {
-    const s = AREA_STYLE[f.type] || AREA_STYLE.park;
-    const d = f.polygon.map((p, i) => `${i ? 'L' : 'M'}${round(p[0])},${round(p[1])}`).join('') + 'Z';
-    return `<path class="area" d="${d}" fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.width}" fill-rule="evenodd"/>`;
-  }).join('\n');
+    const s = featStyle(f.type);
+    const pts = featPts(f);
+    if (!pts.length) return '';
+    if (f.kind === 'point') {
+      const [x, y] = pts[0];
+      return `<circle class="area" cx="${round(x)}" cy="${round(y)}" r="${round(markerR)}" fill="${s.marker || s.fill}" stroke="#0d3144" stroke-width="2"/>`;
+    }
+    if (pts.length < 2) return '';
+    const dOpen = pts.map((p, i) => `${i ? 'L' : 'M'}${round(p[0])},${round(p[1])}`).join('');
+    if ((f.kind || 'area') === 'line') {
+      return `<path class="area" d="${dOpen}" fill="none" stroke="${s.lineStroke || s.stroke}" stroke-width="${s.lineWidth || 3}" stroke-linecap="round"/>`;
+    }
+    return `<path class="area" d="${dOpen}Z" fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.width}" fill-rule="evenodd"/>`;
+  }).filter(Boolean).join('\n');
 
   const groups = draft.streets.map(st => {
     const paths = st.segments.map(seg =>

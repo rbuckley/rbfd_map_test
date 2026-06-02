@@ -2,7 +2,7 @@
 // auto-pull every named road inside it from the Overpass API, project to SVG
 // coordinates, then review / save / export — reusing the builder's plumbing.
 import { saveUserDistrict } from './storage.js';
-import { buildDistrictRecord, nextDistrictId, exportDistrictFiles } from './builder.js';
+import { buildDistrictRecord, nextDistrictId, exportDistrictFiles, FEATURE_STYLE } from './builder.js';
 
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
@@ -111,7 +111,14 @@ const FEATURE_FILTERS = p =>
   `way["leisure"="park"]${p};relation["leisure"="park"]${p};` +
   `way["amenity"="school"]${p};relation["amenity"="school"]${p};` +
   `way["natural"="water"]${p};relation["natural"="water"]${p};` +
-  `way["waterway"="riverbank"]${p};relation["waterway"="riverbank"]${p};`;
+  `way["waterway"="riverbank"]${p};relation["waterway"="riverbank"]${p};` +
+  `way["waterway"="dock"]${p};relation["waterway"="dock"]${p};` +
+  `way["leisure"="marina"]${p};relation["leisure"="marina"]${p};` +
+  `way["man_made"="pier"]${p};relation["man_made"="pier"]${p};` +
+  `way["man_made"="breakwater"]${p};` +
+  `way["leisure"="slipway"]${p};` +
+  `node["amenity"="fire_station"]${p};way["amenity"="fire_station"]${p};relation["amenity"="fire_station"]${p};` +
+  `node["amenity"="hospital"]${p};way["amenity"="hospital"]${p};relation["amenity"="hospital"]${p};`;
 
 export function overpassQuery(polyLatLng) {
   const poly = polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ');
@@ -176,10 +183,19 @@ export function overpassToStreets(json, ...boundaries) {
   return [...byName.entries()].map(([name, segments]) => ({ name, segments }));
 }
 
-function featureType(tags) {
-  if (tags.leisure === 'park') return 'park';
-  if (tags.amenity === 'school') return 'school';
-  if (tags.natural === 'water' || tags.waterway === 'riverbank') return 'water';
+// Classify an OSM element's tags into a feature { type, area } where `area` is
+// true (always filled), false (always a line), or 'auto' (filled if the way is
+// a closed ring, else a line — e.g. piers).
+function featureDef(tags) {
+  if (tags.leisure === 'park') return { type: 'park', area: true };
+  if (tags.amenity === 'school') return { type: 'school', area: true };
+  if (tags.natural === 'water' || tags.waterway === 'riverbank' || tags.waterway === 'dock') return { type: 'water', area: true };
+  if (tags.leisure === 'marina') return { type: 'marina', area: true };
+  if (tags.man_made === 'pier') return { type: 'pier', area: 'auto' };
+  if (tags.man_made === 'breakwater' || tags.man_made === 'groyne') return { type: 'breakwater', area: false };
+  if (tags.leisure === 'slipway') return { type: 'slipway', area: false };
+  if (tags.amenity === 'fire_station') return { type: 'fire_station', area: 'auto', point: true };
+  if (tags.amenity === 'hospital') return { type: 'hospital', area: 'auto', point: true };
   return null;
 }
 
@@ -220,12 +236,19 @@ export function assembleRings(ways) {
   return rings;
 }
 
-// Park / school / water area polygons for shading (ways + multipolygon
-// relations), kept if inside every boundary passed.
+function isClosed(pts) {
+  if (pts.length < 4) return false;
+  const a = pts[0], b = pts[pts.length - 1];
+  return Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+}
+
+// Map features for shading: filled areas (park/school/water/marina + relations)
+// and lines (piers/breakwaters/slipways). Each is kept/clipped to every
+// boundary passed. Returns { type, kind:'area'|'line', points:[[x,y],...] }.
 export function overpassToFeatures(json, ...boundaries) {
   const clips = boundaries.filter(b => b && b.length >= 3).map(b => ({ ring: b, ccw: ensureCCW(b) }));
   const feats = [];
-  const addRing = (type, ring) => {
+  const addArea = (type, ring) => {
     if (ring.length < 3) return;
     let r = ring;
     for (const { ring: b, ccw } of clips) {
@@ -235,14 +258,33 @@ export function overpassToFeatures(json, ...boundaries) {
       const clipped = clipPolygonToPolygon(r, ccw);
       if (clipped.length >= 3) r = clipped;
     }
-    feats.push({ type, polygon: r.map(([lon, lat]) => project(lat, lon)) });
+    feats.push({ type, kind: 'area', points: r.map(([lon, lat]) => project(lat, lon)) });
+  };
+  const addLine = (type, pts) => {
+    let subs = [pts];
+    for (const { ring } of clips) subs = subs.flatMap(s => clipPolylineToPolygon(s, ring));
+    for (const s of subs) if (s.length >= 2) feats.push({ type, kind: 'line', points: s.map(([lon, lat]) => project(lat, lon)) });
+  };
+  const addPoint = (type, lng, lat) => {
+    if (clips.every(({ ring }) => pointInPolygon([lng, lat], ring))) {
+      feats.push({ type, kind: 'point', points: [project(lat, lng)] });
+    }
   };
   for (const el of (json.elements || [])) {
     if (!el.tags) continue;
-    const type = featureType(el.tags);
-    if (!type) continue;
-    if (el.type === 'way' && el.geometry) addRing(type, el.geometry.map(g => [g.lon, g.lat]));
-    else if (el.type === 'relation') for (const ring of assembleRings(relationOuterWays(el))) addRing(type, ring);
+    const def = featureDef(el.tags);
+    if (!def) continue;
+    if (el.type === 'node' && def.point && el.lat != null) {
+      addPoint(def.type, el.lon, el.lat);
+    } else if (el.type === 'way' && el.geometry) {
+      const pts = el.geometry.map(g => [g.lon, g.lat]);
+      const asArea = def.area === true || (def.area === 'auto' && isClosed(pts));
+      if (asArea) addArea(def.type, pts);
+      else if (def.point) { const c = centroid(pts); addPoint(def.type, c[0], c[1]); } // open way POI -> marker at centroid
+      else addLine(def.type, pts);
+    } else if (el.type === 'relation') {
+      for (const ring of assembleRings(relationOuterWays(el))) addArea(def.type, ring);
+    }
   }
   return feats;
 }
@@ -395,34 +437,47 @@ export function openMapImporter({ onSaved } = {}) {
       hint(subdividing ? 'Sub-area cleared. Draw the next district boundary.' : 'Boundary cleared. Click to draw, or search a city.');
     });
 
-    // Draw the previewed streets/areas for a fetched Overpass result.
-    const FILL = { park: ['#2d5a3d', '#1f3d2c'], school: ['#5a4d2d', '#3d3320'], water: ['#2c5a73', '#15455e'] };
-    // Preview exactly what will be imported: streets/areas clipped to the same
-    // boundaries used on save, so "what you see" matches "what you get".
+    // Preview exactly what will be imported: streets/features clipped to the
+    // same boundaries used on save, so "what you see" matches "what you get".
     function previewOverpass(json, ...boundaries) {
       const clips = boundaries.filter(b => b && b.length >= 3);
-      const drawArea = (t, ring0) => {
+      const clipLine = pts => { let subs = [pts]; for (const c of clips) subs = subs.flatMap(s => clipPolylineToPolygon(s, c)); return subs; };
+      const drawArea = (type, ring0) => {
         let ring = ring0, ok = true;
         for (const c of clips) {
           if (!(pointInPolygon(centroid(ring), c) || ring.some(p => pointInPolygon(p, c)))) { ok = false; break; }
           const cl = clipPolygonToPolygon(ring, ensureCCW(c));
           if (cl.length >= 3) ring = cl;
         }
-        if (ok && ring.length >= 3) L.polygon(ring.map(([lon, lat]) => [lat, lon]), { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
+        const s = FEATURE_STYLE[type] || FEATURE_STYLE.park;
+        if (ok && ring.length >= 3) L.polygon(ring.map(([lon, lat]) => [lat, lon]), { color: s.stroke, fillColor: s.fill, fillOpacity: 0.55, weight: 1 }).addTo(map);
+      };
+      const drawFeatLine = (type, pts) => {
+        const s = FEATURE_STYLE[type] || FEATURE_STYLE.pier;
+        for (const sub of clipLine(pts)) if (sub.length >= 2) L.polyline(sub.map(([lon, lat]) => [lat, lon]), { color: s.lineStroke || s.stroke, weight: (s.lineWidth || 3) + 1 }).addTo(map);
+      };
+      const drawPoint = (type, lat, lon) => {
+        if (!clips.every(c => pointInPolygon([lon, lat], c))) return;
+        const s = FEATURE_STYLE[type] || FEATURE_STYLE.fire_station;
+        L.circleMarker([lat, lon], { radius: 6, color: '#0d3144', weight: 2, fillColor: s.marker || s.fill, fillOpacity: 1 }).addTo(map);
       };
       for (const el of json.elements) {
         if (!el.tags) continue;
-        const t = featureType(el.tags);
-        if (el.type === 'way' && el.geometry) {
+        const def = featureDef(el.tags);
+        if (el.type === 'node' && def && def.point && el.lat != null) {
+          drawPoint(def.type, el.lat, el.lon);
+        } else if (el.type === 'way' && el.geometry) {
           const pts = el.geometry.map(g => [g.lon, g.lat]);
-          if (t) drawArea(t, pts);
-          else if (el.tags.highway) {
-            let subs = [pts];
-            for (const c of clips) subs = subs.flatMap(s => clipPolylineToPolygon(s, c));
-            for (const s of subs) if (s.length >= 2) L.polyline(s.map(([lon, lat]) => [lat, lon]), { color: '#5fa8d3', weight: 1.5 }).addTo(map);
+          if (def) {
+            const asArea = def.area === true || (def.area === 'auto' && isClosed(pts));
+            if (asArea) drawArea(def.type, pts);
+            else if (def.point) { const c = centroid(pts); drawPoint(def.type, c[1], c[0]); }
+            else drawFeatLine(def.type, pts);
+          } else if (el.tags.highway) {
+            for (const sub of clipLine(pts)) if (sub.length >= 2) L.polyline(sub.map(([lon, lat]) => [lat, lon]), { color: '#5fa8d3', weight: 1.5 }).addTo(map);
           }
-        } else if (el.type === 'relation' && t) {
-          for (const ring of assembleRings(relationOuterWays(el))) drawArea(t, ring);
+        } else if (el.type === 'relation' && def) {
+          for (const ring of assembleRings(relationOuterWays(el))) drawArea(def.type, ring);
         }
       }
     }
@@ -464,7 +519,12 @@ export function openMapImporter({ onSaved } = {}) {
     $('miCitySearch').addEventListener('click', doCitySearch);
     $('miCity').addEventListener('keydown', e => { if (e.key === 'Enter') doCitySearch(); });
 
-    const featCount = (feats, t) => feats.filter(f => f.type === t).length;
+    const featSummary = feats => {
+      const c = {};
+      for (const f of feats) c[f.type] = (c[f.type] || 0) + 1;
+      const parts = Object.entries(c).map(([t, n]) => `${n} ${t}`);
+      return parts.length ? parts.join(', ') : 'no features';
+    };
 
     $('miFinish').addEventListener('click', async () => {
       const boundary = cityRing || (points.length >= 3 ? points.map(p => [p.lng, p.lat]) : null);
@@ -500,7 +560,7 @@ export function openMapImporter({ onSaved } = {}) {
           renderList();
           if (draft.streets.length || draft.features.length) {
             $('miSave').disabled = false; $('miExport').disabled = false;
-            hint(`Imported ${draft.streets.length} streets, ${featCount(draft.features, 'park')} parks, ${featCount(draft.features, 'school')} schools, ${featCount(draft.features, 'water')} water. Review the list, name the district, then Save or Export.`);
+            hint(`Imported ${draft.streets.length} streets + ${featSummary(draft.features)}. Review the list, name the district, then Save or Export.`);
           } else {
             hint('No named streets found in that area. Try a larger boundary.');
           }
