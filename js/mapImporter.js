@@ -108,10 +108,10 @@ export function clipPolygonToPolygon(subject, clipCCW) {
 
 const FEATURE_FILTERS = p =>
   `way["highway"~"${HIGHWAY_RE}"]["name"]${p};` +
-  `way["leisure"="park"]${p};` +
-  `way["amenity"="school"]${p};` +
-  `way["natural"="water"]${p};` +
-  `way["waterway"="riverbank"]${p};`;
+  `way["leisure"="park"]${p};relation["leisure"="park"]${p};` +
+  `way["amenity"="school"]${p};relation["amenity"="school"]${p};` +
+  `way["natural"="water"]${p};relation["natural"="water"]${p};` +
+  `way["waterway"="riverbank"]${p};relation["waterway"="riverbank"]${p};`;
 
 export function overpassQuery(polyLatLng) {
   const poly = polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ');
@@ -176,31 +176,74 @@ export function overpassToStreets(json, boundary) {
   return [...byName.entries()].map(([name, segments]) => ({ name, segments }));
 }
 
-// Park / school / water area polygons for shading, kept if inside the boundary.
+function featureType(tags) {
+  if (tags.leisure === 'park') return 'park';
+  if (tags.amenity === 'school') return 'school';
+  if (tags.natural === 'water' || tags.waterway === 'riverbank') return 'water';
+  return null;
+}
+
+// Outer member ways of a multipolygon relation, as [lng,lat] polylines.
+function relationOuterWays(rel) {
+  return (rel.members || [])
+    .filter(m => m.type === 'way' && (m.role === 'outer' || !m.role) && m.geometry)
+    .map(m => m.geometry.map(g => [g.lon, g.lat]));
+}
+
+// Stitch member ways (which may be split into pieces) into closed rings.
+export function assembleRings(ways) {
+  const segs = ways.filter(w => w.length >= 2).map(w => w.slice());
+  const used = new Array(segs.length).fill(false);
+  const key = p => `${p[0].toFixed(7)},${p[1].toFixed(7)}`;
+  const rings = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    let ring = segs[i].slice();
+    let extended = true;
+    while (extended && key(ring[0]) !== key(ring[ring.length - 1])) {
+      extended = false;
+      for (let j = 0; j < segs.length; j++) {
+        if (used[j]) continue;
+        const s = segs[j], a = s[0], b = s[s.length - 1];
+        const end = ring[ring.length - 1], start = ring[0];
+        if (key(end) === key(a)) { ring = ring.concat(s.slice(1)); }
+        else if (key(end) === key(b)) { ring = ring.concat(s.slice().reverse().slice(1)); }
+        else if (key(start) === key(b)) { ring = s.slice(0, -1).concat(ring); }
+        else if (key(start) === key(a)) { ring = s.slice().reverse().slice(0, -1).concat(ring); }
+        else continue;
+        used[j] = true; extended = true; break;
+      }
+    }
+    if (ring.length >= 3) rings.push(ring);
+  }
+  return rings;
+}
+
+// Park / school / water area polygons for shading (ways + multipolygon
+// relations), kept if inside the boundary.
 export function overpassToFeatures(json, boundary) {
   const hasBoundary = boundary && boundary.length >= 3;
   const clipRing = hasBoundary ? ensureCCW(boundary) : null;
   const feats = [];
-  for (const el of (json.elements || [])) {
-    if (el.type !== 'way' || !el.tags || !el.geometry) continue;
-    let type = null;
-    if (el.tags.leisure === 'park') type = 'park';
-    else if (el.tags.amenity === 'school') type = 'school';
-    else if (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') type = 'water';
-    if (!type) continue;
-    let ring = el.geometry.map(g => [g.lon, g.lat]);
-    if (ring.length < 3) continue;
+  const addRing = (type, ring) => {
+    if (ring.length < 3) return;
+    let r = ring;
     if (hasBoundary) {
-      // Keep areas inside the boundary (concave-safe inclusion). Clip the shape
-      // when that yields a valid polygon, but never drop a clearly-inside area
-      // just because Sutherland–Hodgman (convex-only) collapses on a concave
-      // boundary — fall back to the full polygon instead.
-      const inside = pointInPolygon(centroid(ring), boundary) || ring.some(p => pointInPolygon(p, boundary));
-      if (!inside) continue;
-      const clipped = clipPolygonToPolygon(ring, clipRing);
-      if (clipped.length >= 3) ring = clipped;
+      // Concave-safe inclusion; clip the shape only when that stays valid.
+      const inside = pointInPolygon(centroid(r), boundary) || r.some(p => pointInPolygon(p, boundary));
+      if (!inside) return;
+      const clipped = clipPolygonToPolygon(r, clipRing);
+      if (clipped.length >= 3) r = clipped;
     }
-    feats.push({ type, polygon: ring.map(([lon, lat]) => project(lat, lon)) });
+    feats.push({ type, polygon: r.map(([lon, lat]) => project(lat, lon)) });
+  };
+  for (const el of (json.elements || [])) {
+    if (!el.tags) continue;
+    const type = featureType(el.tags);
+    if (!type) continue;
+    if (el.type === 'way' && el.geometry) addRing(type, el.geometry.map(g => [g.lon, g.lat]));
+    else if (el.type === 'relation') for (const ring of assembleRings(relationOuterWays(el))) addRing(type, ring);
   }
   return feats;
 }
@@ -356,13 +399,18 @@ export function openMapImporter({ onSaved } = {}) {
     const FILL = { park: ['#2d5a3d', '#1f3d2c'], school: ['#5a4d2d', '#3d3320'], water: ['#2c5a73', '#15455e'] };
     function previewOverpass(json) {
       for (const el of json.elements) {
-        if (!el.geometry || !el.tags) continue;
-        const latlngs = el.geometry.map(g => [g.lat, g.lon]);
-        const t = el.tags.leisure === 'park' ? 'park'
-          : el.tags.amenity === 'school' ? 'school'
-          : (el.tags.natural === 'water' || el.tags.waterway === 'riverbank') ? 'water' : null;
-        if (t) L.polygon(latlngs, { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
-        else if (el.tags.highway) L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
+        if (!el.tags) continue;
+        const t = featureType(el.tags);
+        if (el.type === 'way' && el.geometry) {
+          const latlngs = el.geometry.map(g => [g.lat, g.lon]);
+          if (t) L.polygon(latlngs, { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
+          else if (el.tags.highway) L.polyline(latlngs, { color: '#5fa8d3', weight: 1.5 }).addTo(map);
+        } else if (el.type === 'relation' && t) {
+          const outer = (el.members || []).filter(m => m.type === 'way' && (m.role === 'outer' || !m.role) && m.geometry).map(m => m.geometry.map(g => [g.lon, g.lat]));
+          for (const ring of assembleRings(outer)) {
+            L.polygon(ring.map(([lon, lat]) => [lat, lon]), { color: FILL[t][0], fillColor: FILL[t][1], fillOpacity: 0.55, weight: 1 }).addTo(map);
+          }
+        }
       }
     }
 
