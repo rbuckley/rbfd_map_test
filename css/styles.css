@@ -29,7 +29,22 @@ body {
   flex-wrap: wrap;
   border-bottom: 2px solid var(--accent);
   flex: 0 0 auto;
+  position: relative;
+  z-index: 20;            /* keep the Maps menu above the map below */
 }
+.maps-menu-wrap { position: relative; }
+.maps-menu {
+  position: absolute; top: 100%; right: 0; z-index: 30; margin-top: 4px;
+  background: var(--panel); border: 1px solid #2d4a6f; border-radius: 8px;
+  display: flex; flex-direction: column; min-width: 170px; padding: 4px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+}
+.menu-item {
+  background: transparent; color: var(--text); border: none; text-align: left;
+  padding: 9px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+  font-family: inherit; cursor: pointer; white-space: nowrap;
+}
+.menu-item:hover { background: var(--accent2); }
 .title { flex: 1; min-width: 100px; }
 .header h1 { font-size: 14px; font-weight: 700; }
 #districtPicker {

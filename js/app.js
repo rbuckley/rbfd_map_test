@@ -87,6 +87,18 @@ async function main() {
     container.appendChild(sel);
   }
 
+  // Maps menu (Add map / Edit / Delete / Export / Import) open-close.
+  const mapsBtn = document.getElementById('mapsMenuBtn');
+  const mapsMenu = document.getElementById('mapsMenu');
+  mapsBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    mapsMenu.style.display = mapsMenu.style.display === 'none' ? 'flex' : 'none';
+  });
+  mapsMenu.addEventListener('click', () => { mapsMenu.style.display = 'none'; });
+  document.addEventListener('click', e => {
+    if (e.target !== mapsBtn && !mapsMenu.contains(e.target)) mapsMenu.style.display = 'none';
+  });
+
   // Small chooser: draw on a map (auto-import) vs trace an image (manual).
   function chooseNewDistrict() {
     const onSaved = id => switchDistrict(id);
@@ -94,7 +106,7 @@ async function main() {
     ov.className = 'chooser-overlay';
     ov.innerHTML = `
       <div class="chooser-card">
-        <h2>New district</h2>
+        <h2>Add a map</h2>
         <button class="btn primary" id="chMap">Draw on a map<small>Auto-import streets from OpenStreetMap</small></button>
         <button class="btn" id="chImg">Trace an image<small>Draw streets by hand over an uploaded image</small></button>
         <button class="btn" id="chCancel">Cancel</button>

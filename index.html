@@ -33,11 +33,16 @@
       <button class="btn" id="missed">Retry Missed</button>
       <button class="btn" id="resetView">Reset Zoom</button>
       <button class="btn" id="rotateBtn">⟳ Rotate</button>
-      <button class="btn" id="newDistrictBtn">＋ District</button>
-      <button class="btn" id="editDistrictBtn">✎ Edit</button>
-      <button class="btn" id="deleteDistrictBtn" style="display:none;">🗑 Delete</button>
-      <button class="btn" id="exportAllBtn">⤓ Export all</button>
-      <label class="btn" id="importAllBtn" style="cursor:pointer">⤒ Import<input id="importAllInput" type="file" accept="application/json,.json" hidden></label>
+      <div class="maps-menu-wrap">
+        <button class="btn" id="mapsMenuBtn">🗺 Maps ▾</button>
+        <div class="maps-menu" id="mapsMenu" style="display:none;">
+          <button class="menu-item" id="newDistrictBtn">＋ Add map</button>
+          <button class="menu-item" id="editDistrictBtn">✎ Edit</button>
+          <button class="menu-item" id="deleteDistrictBtn" style="display:none;">🗑 Delete</button>
+          <button class="menu-item" id="exportAllBtn">⤓ Export all</button>
+          <label class="menu-item" id="importAllBtn">⤒ Import<input id="importAllInput" type="file" accept="application/json,.json" hidden></label>
+        </div>
+      </div>
     </div>
   </div>
   <div class="map-wrap">
