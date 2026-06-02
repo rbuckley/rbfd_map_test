@@ -118,7 +118,9 @@ const FEATURE_FILTERS = p =>
   `way["man_made"="breakwater"]${p};` +
   `way["leisure"="slipway"]${p};` +
   `node["amenity"="fire_station"]${p};way["amenity"="fire_station"]${p};relation["amenity"="fire_station"]${p};` +
-  `node["amenity"="hospital"]${p};way["amenity"="hospital"]${p};relation["amenity"="hospital"]${p};`;
+  `node["amenity"="hospital"]${p};way["amenity"="hospital"]${p};relation["amenity"="hospital"]${p};` +
+  `way["natural"="beach"]${p};relation["natural"="beach"]${p};` +
+  `way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"]${p};`;
 
 export function overpassQuery(polyLatLng) {
   const poly = polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ');
@@ -190,12 +192,14 @@ function featureDef(tags) {
   if (tags.leisure === 'park') return { type: 'park', area: true };
   if (tags.amenity === 'school') return { type: 'school', area: true };
   if (tags.natural === 'water' || tags.waterway === 'riverbank' || tags.waterway === 'dock') return { type: 'water', area: true };
+  if (tags.natural === 'beach') return { type: 'beach', area: true };
   if (tags.leisure === 'marina') return { type: 'marina', area: true };
   if (tags.man_made === 'pier') return { type: 'pier', area: 'auto' };
   if (tags.man_made === 'breakwater' || tags.man_made === 'groyne') return { type: 'breakwater', area: false };
   if (tags.leisure === 'slipway') return { type: 'slipway', area: false };
   if (tags.amenity === 'fire_station') return { type: 'fire_station', area: 'auto', point: true };
   if (tags.amenity === 'hospital') return { type: 'hospital', area: 'auto', point: true };
+  if (['rail', 'light_rail', 'tram', 'narrow_gauge'].includes(tags.railway)) return { type: 'railway', area: false };
   return null;
 }
 

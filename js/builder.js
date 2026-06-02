@@ -13,11 +13,13 @@ const STREET_STROKE = '#9bb4cc';
 // furthest back); lines sit on top of the filled areas.
 export const FEATURE_STYLE = {
   water:      { fill: '#15455e', stroke: '#2c5a73', width: 1, rank: 0 },
-  marina:     { fill: '#1d4a5a', stroke: '#3a7a93', width: 1, rank: 1 },
+  beach:      { fill: '#8a7d4a', stroke: '#a89a5e', width: 1, rank: 1 },
+  marina:     { fill: '#1d4a5a', stroke: '#3a7a93', width: 1, rank: 2 },
   park:       { fill: '#1f3d2c', stroke: '#2d5a3d', width: 1, rank: 2 },
   school:     { fill: '#3d3320', stroke: '#5a4d2d', width: 0.8, rank: 3 },
   fire_station: { fill: '#5a2222', stroke: '#a83232', width: 1, marker: '#e23b3b', rank: 5 },
   hospital:   { fill: '#3a2a4a', stroke: '#7a5a9a', width: 1, marker: '#c45ad0', rank: 5 },
+  railway:    { fill: '#6b6b6b', stroke: '#9a9a9a', width: 1, lineStroke: '#9a9a9a', lineWidth: 2, rank: 9 },
   pier:       { fill: '#5a4a30', stroke: '#8b6c3f', width: 1, lineStroke: '#8b6c3f', lineWidth: 3, rank: 10 },
   breakwater: { fill: '#4a4a42', stroke: '#7a7a6a', width: 1, lineStroke: '#7a7a6a', lineWidth: 3, rank: 11 },
   slipway:    { fill: '#5a4a30', stroke: '#8b6c3f', width: 1, lineStroke: '#8b6c3f', lineWidth: 2, rank: 12 },
