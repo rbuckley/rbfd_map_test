@@ -34,13 +34,16 @@ export function createMapView(svg) {
     vb = { ...baseVB };
     applyVB();
   }
-  // Map a content-space point to its on-screen (root) position under rotation.
-  function rotatePoint(px, py) {
-    if (!angle) return [px, py];
-    const rad = angle * Math.PI / 180, c = Math.cos(rad), s = Math.sin(rad);
+  // Rotate a point about the map centre by `deg`.
+  function rot(px, py, deg) {
+    if (!deg) return [px, py];
+    const rad = deg * Math.PI / 180, c = Math.cos(rad), s = Math.sin(rad);
     const dx = px - cx, dy = py - cy;
     return [cx + dx * c - dy * s, cy + dx * s + dy * c];
   }
+  // content-space -> on-screen (root) position under rotation, and the inverse.
+  const rotatePoint = (px, py) => rot(px, py, angle);
+  const unrotatePoint = (px, py) => rot(px, py, -angle);
   function rotate() {
     angle = (angle + 90) % 360;
     rotG.setAttribute('transform', angle ? `rotate(${angle} ${cx} ${cy})` : '');
@@ -135,6 +138,35 @@ export function createMapView(svg) {
     }
   }
 
+  // Convert a screen point to content-space coords (accounting for rotation).
+  function clientToContent(clientX, clientY) {
+    const r = svg.getBoundingClientRect();
+    const rx = vb.x + (clientX - r.left) / r.width * vb.w;
+    const ry = vb.y + (clientY - r.top) / r.height * vb.h;
+    return unrotatePoint(rx, ry);
+  }
+
+  // Centre the view on a content-space point.
+  function panToPoint(x, y) {
+    const [sx, sy] = rotatePoint(x, y);
+    vb.x = sx - vb.w / 2;
+    vb.y = sy - vb.h / 2;
+    applyVB();
+  }
+
+  // Highlight markers (content-space), drawn inside the rotation group so they
+  // track the map. Used by the Blocks mode.
+  let markersG = null;
+  function marker(x, y, { color = '#ff8a3d', r = baseVB0.w * 0.006 } = {}) {
+    if (!markersG) { markersG = document.createElementNS(SVGNS, 'g'); markersG.setAttribute('class', '__markers'); rotG.appendChild(markersG); }
+    const c = document.createElementNS(SVGNS, 'circle');
+    c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', r);
+    c.setAttribute('fill', color); c.setAttribute('stroke', '#0d3144'); c.setAttribute('stroke-width', r * 0.3);
+    markersG.appendChild(c);
+    return c;
+  }
+  function clearMarkers() { if (markersG) markersG.innerHTML = ''; }
+
   applyVB();
-  return { resetView, panToStreet, rotate };
+  return { resetView, panToStreet, rotate, clientToContent, panToPoint, marker, clearMarkers };
 }

@@ -31,6 +31,8 @@ function gatherDom() {
     modeTabs: Array.from(document.querySelectorAll('#modeTabs .mode-tab')),
     selectionTabs: Array.from(document.querySelectorAll('#selectionTabs .mode-tab')),
     answerTabs: Array.from(document.querySelectorAll('#answerTabs .mode-tab')),
+    blocksToggles: document.getElementById('blocksToggles'),
+    blockStyleTabs: Array.from(document.querySelectorAll('#blockStyleTabs .mode-tab')),
   };
 }
 

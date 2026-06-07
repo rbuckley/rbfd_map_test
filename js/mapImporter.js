@@ -182,7 +182,44 @@ export function blockCoverageReport(blockMap, districtStreets = []) {
   return lines.join('\n');
 }
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+// Merge key for street-name variants (case, "Blvd." vs "Boulevard", etc.).
+const streetMergeKey = s => s.toLowerCase().replace(/\bblvd\.?\b/g, 'boulevard').replace(/[^a-z0-9]+/g, ' ').trim();
+
+// Build a per-street block index with a representative position (centroid of
+// each block's addresses, in projected map coords) for the advanced Blocks
+// mode. Returns { street: [{block, x, y, count}, ...] }, clipped to boundary
+// and merging street-name variants.
+export function addressesToBlockIndex(json, boundary) {
+  const hasB = boundary && boundary.length >= 3;
+  const streets = {}; // key -> { names:{name:freq}, blocks:Map(block -> {sx,sy,count}) }
+  for (const el of (json.elements || [])) {
+    const t = el.tags; if (!t) continue;
+    const hn = t['addr:housenumber'], st = t['addr:street'];
+    if (!hn || !st) continue;
+    const num = parseInt(hn, 10);
+    if (!Number.isFinite(num)) continue;
+    const lon = el.lon != null ? el.lon : (el.center && el.center.lon);
+    const lat = el.lat != null ? el.lat : (el.center && el.center.lat);
+    if (lon == null || lat == null) continue;
+    if (hasB && !pointInPolygon([lon, lat], boundary)) continue;
+    const key = streetMergeKey(st);
+    const e = streets[key] || (streets[key] = { names: {}, blocks: new Map() });
+    e.names[st] = (e.names[st] || 0) + 1;
+    const block = Math.floor(num / 100) * 100;
+    const [x, y] = project(lat, lon);
+    const b = e.blocks.get(block) || { sx: 0, sy: 0, count: 0 };
+    b.sx += x; b.sy += y; b.count++; e.blocks.set(block, b);
+  }
+  const out = {};
+  for (const e of Object.values(streets)) {
+    const name = Object.entries(e.names).sort((a, b) => b[1] - a[1])[0][0]; // most common spelling
+    out[name] = [...e.blocks.entries()].sort((a, b) => a[0] - b[0]).map(([block, b]) => ({
+      block, x: Math.round(b.sx / b.count * 10) / 10, y: Math.round(b.sy / b.count * 10) / 10, count: b.count,
+    }));
+  }
+  return out;
+}
+
 
 function ringArea(ring) {
   let s = 0;
@@ -380,6 +417,7 @@ export function openMapImporter({ onSaved } = {}) {
         <div id="miCityResults" class="mi-city-results"></div>
       </span>
       <label class="mi-check"><input type="checkbox" id="miSubdivide"> Subdivide into districts</label>
+      <label class="mi-check"><input type="checkbox" id="miBlocks"> Address blocks</label>
       <button id="miFinish" class="btn primary">Finish boundary &amp; import</button>
       <button id="miCreate" class="btn primary" style="display:none;">Create district from area</button>
       <button id="miClear" class="btn">Clear boundary</button>
@@ -464,6 +502,7 @@ export function openMapImporter({ onSaved } = {}) {
     let cityRing = null;             // [[lng,lat],...] from a chosen city
     let areaId = null;               // Overpass area id for the chosen city
     let cityJson = null;             // cached Overpass result (for subdividing)
+    let addrJson = null;             // cached address result (when Address blocks is on)
     let subdividing = false;         // after a pull, draw sub-districts
     let subdivideOuter = null;       // the pulled area's boundary ([lng,lat]) — clips sub-districts to the city
     let cityLayer = null;
@@ -609,19 +648,27 @@ export function openMapImporter({ onSaved } = {}) {
       return parts.length ? parts.join(', ') : 'no features';
     };
 
+    const fetchOverpass = async query => {
+      const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+      if (!res.ok) throw new Error(`Overpass error ${res.status}`);
+      return res.json();
+    };
+
     $('miFinish').addEventListener('click', async () => {
       const boundary = cityRing || (points.length >= 3 ? points.map(p => [p.lng, p.lat]) : null);
       if (!boundary) { hint('Draw a boundary (3+ points) or search a city first.'); return; }
       const subdivide = $('miSubdivide').checked;
+      const wantBlocks = $('miBlocks').checked;
       hint(areaId ? 'Fetching the whole city from OpenStreetMap… (can take a while)' : 'Fetching streets from OpenStreetMap…');
       $('miFinish').disabled = true;
       try {
-        const query = areaId ? overpassAreaQuery(areaId) : overpassQuery(points);
-        const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
-        if (!res.ok) throw new Error(`Overpass error ${res.status}`);
-        const json = await res.json();
+        const json = await fetchOverpass(areaId ? overpassAreaQuery(areaId) : overpassQuery(points));
         cityJson = json;
         previewOverpass(json, boundary);
+        if (wantBlocks) {
+          hint('Fetching address blocks from OpenStreetMap…');
+          addrJson = await fetchOverpass(areaId ? addressAreaQuery(areaId) : addressQuery(points));
+        }
 
         if (subdivide) {
           // Keep the city as a reference; draw sub-districts and create each,
@@ -640,10 +687,12 @@ export function openMapImporter({ onSaved } = {}) {
           draft.boundary = boundary.map(([lng, lat]) => ({ lat, lng }));
           draft.streets = overpassToStreets(json, boundary);
           draft.features = overpassToFeatures(json, boundary);
+          draft.blocks = wantBlocks ? addressesToBlockIndex(addrJson, boundary) : {};
           renderList();
           if (draft.streets.length || draft.features.length) {
             $('miSave').disabled = false; $('miExport').disabled = false;
-            hint(`Imported ${draft.streets.length} streets + ${featSummary(draft.features)}. Review the list, name the district, then Save or Export.`);
+            const blkNote = wantBlocks ? `, ${Object.keys(draft.blocks).length} streets with blocks` : '';
+            hint(`Imported ${draft.streets.length} streets + ${featSummary(draft.features)}${blkNote}. Review the list, name the district, then Save or Export.`);
           } else {
             hint('No named streets found in that area. Try a larger boundary.');
           }
@@ -665,9 +714,10 @@ export function openMapImporter({ onSaved } = {}) {
       const streets = overpassToStreets(cityJson, subPoly, subdivideOuter);
       const features = overpassToFeatures(cityJson, subPoly, subdivideOuter);
       if (!streets.length) { hint('No streets fell inside that sub-area. Try again.'); return; }
+      const blocks = addrJson ? addressesToBlockIndex(addrJson, subPoly) : {};
       const id = nextDistrictId(name);
       const record = buildDistrictRecord({
-        id, name, streets, features, excluded: new Set(), confusionGroups: {},
+        id, name, streets, features, excluded: new Set(), confusionGroups: {}, blocks,
         boundary: points.map(p => ({ lat: p.lat, lng: p.lng })),
       });
       saveUserDistrict(record);

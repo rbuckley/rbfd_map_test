@@ -18,7 +18,7 @@ export function createQuiz({ dom }) {
   let streetEls = {};
 
   // --- State ---
-  let mode = 'explore';          // 'explore' | 'test'
+  let mode = 'explore';          // 'explore' | 'test' | 'blocks'
   let selection = 'random';      // 'random' | 'click' (Test only)
   let answerMethod = 'dropdown'; // 'dropdown' | 'type' (Test only)
   let currentKind = null;        // 'random' | 'retry' | 'click' — the live question's kind
@@ -28,16 +28,27 @@ export function createQuiz({ dom }) {
   let missed = new Set();
   let asked = new Set();
   let useMissedPool = false;
+  // Blocks mode
+  let blockList = [];            // [{street, block, x, y, count}]
+  let blockThreshold = 150;      // proximity (map units) counted as correct in Locate
+  let blockStyle = 'locate';     // 'locate' | 'identify'
+  let blockTarget = null;
 
   function save() {
     persist({ correct, total, missed, userExcluded });
   }
 
-  // Reset the mode / selection / answer tab highlights to match state.
+  const shuffle = arr => {
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    return arr;
+  };
+
+  // Reset the mode / selection / answer / block-style tab highlights.
   function syncTabUI() {
     dom.modeTabs.forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
     dom.selectionTabs.forEach(t => t.classList.toggle('active', t.dataset.selection === selection));
     dom.answerTabs.forEach(t => t.classList.toggle('active', t.dataset.answer === answerMethod));
+    dom.blockStyleTabs.forEach(t => t.classList.toggle('active', t.dataset.blockstyle === blockStyle));
   }
 
   // Load (or switch to) a district: rebind data + SVG and reset quiz state.
@@ -63,6 +74,15 @@ export function createQuiz({ dom }) {
     mode = 'explore';
     selection = 'random';
     answerMethod = 'dropdown';
+    blockStyle = 'locate';
+    blockTarget = null;
+
+    // Build the Blocks index from district.blocks.
+    blockList = [];
+    for (const [street, arr] of Object.entries(district.blocks || {})) {
+      for (const b of arr) blockList.push({ street, block: b.block, x: b.x, y: b.y, count: b.count });
+    }
+    blockThreshold = computeBlockThreshold(blockList);
     syncTabUI();
 
     // Build the street element index from the injected SVG.
@@ -74,6 +94,8 @@ export function createQuiz({ dom }) {
         handleStreetClick(g.dataset.name);
       });
     });
+    // Capture taps for Blocks "Locate" before they reach street handlers.
+    svg.addEventListener('click', handleBlockTap, true);
 
     clearAllMarksComplete();
     updateScore();
@@ -81,8 +103,20 @@ export function createQuiz({ dom }) {
     applyControlVisibility();
     dom.inputRow.style.display = 'none';
     dom.testToggles.style.display = 'none';
+    dom.blocksToggles.style.display = 'none';
     showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
     showFeedback('');
+  }
+
+  function computeBlockThreshold(list) {
+    if (list.length < 2) return 150;
+    const ds = list.map(a => {
+      let best = Infinity;
+      for (const b of list) { if (b === a) continue; const d = Math.hypot(a.x - b.x, a.y - b.y); if (d < best) best = d; }
+      return best;
+    }).filter(d => Number.isFinite(d)).sort((x, y) => x - y);
+    const med = ds[Math.floor(ds.length / 2)] || 150;
+    return Math.max(40, med * 0.6);
   }
 
   function clearAllMarks() {
@@ -285,9 +319,97 @@ export function createQuiz({ dom }) {
   }
 
   function revealCurrent() {
+    if (mode === 'blocks') {
+      if (!blockTarget) { showFeedback('Press "New" to start.', 'info'); return; }
+      mapView.marker(blockTarget.x, blockTarget.y, { color: '#f1c40f' });
+      mapView.panToPoint(blockTarget.x, blockTarget.y);
+      showFeedback(`Answer: ${blockTarget.block} block of ${blockTarget.street} (yellow dot).`, 'info');
+      return;
+    }
     if (!target) { showFeedback('No active question.', 'info'); return; }
     streetEls[target].classList.add('revealed');
     showFeedback(`Answer: ${target}`, 'info');
+  }
+
+  // --- Blocks mode ---
+  const blockLabel = b => `${b.street} – ${b.block} block`;
+
+  function newBlockQuestion() {
+    mapView.clearMarkers();
+    showFeedback('');
+    if (!blockList.length) {
+      blockTarget = null;
+      showPrompt('No address-block data for this district. Re-import it with “Address blocks” enabled.');
+      return;
+    }
+    blockTarget = blockList[Math.floor(Math.random() * blockList.length)];
+    if (blockStyle === 'locate') {
+      dom.inputRow.style.display = 'none';
+      showPrompt(`Tap the ${blockTarget.block} block of ${blockTarget.street}.`);
+    } else {
+      mapView.marker(blockTarget.x, blockTarget.y, { color: '#ff8a3d' });
+      mapView.panToPoint(blockTarget.x, blockTarget.y);
+      setupBlockDropdown(blockTarget);
+      dom.inputRow.style.display = 'flex';
+      dom.dropdown.style.display = ''; dom.textbox.style.display = 'none';
+      showPrompt('Which block is highlighted? Pick it from the list.');
+    }
+  }
+
+  function setupBlockDropdown(tgt) {
+    const others = shuffle(blockList.filter(b => b !== tgt)).slice(0, 6);
+    const chosen = shuffle([tgt, ...others]);
+    dom.dropdown.innerHTML = '<option value="">-- choose --</option>' +
+      chosen.map(b => `<option value="${blockLabel(b)}">${blockLabel(b)}</option>`).join('');
+  }
+
+  function blocksAdvance() { if (mode === 'blocks') newBlockQuestion(); }
+
+  function markBlockCorrect() {
+    total++; correct++;
+    showFeedback('Correct!', 'ok');
+    updateScore(); save();
+    blockTarget = null;
+    setTimeout(blocksAdvance, 1000);
+  }
+  function markBlockWrong() {
+    total++;
+    const t = blockTarget;
+    showFeedback(`Not quite — the ${t.block} block of ${t.street} is the green dot.`, 'bad');
+    updateScore(); save();
+    blockTarget = null;
+    setTimeout(blocksAdvance, 2200);
+  }
+
+  // Locate: a tap anywhere on the map is the guess (capture phase, so it
+  // pre-empts street click handlers).
+  function handleBlockTap(e) {
+    if (mode !== 'blocks' || blockStyle !== 'locate' || !blockTarget) return;
+    e.stopPropagation();
+    const [x, y] = mapView.clientToContent(e.clientX, e.clientY);
+    const tgt = blockTarget;
+    const hit = Math.hypot(x - tgt.x, y - tgt.y) <= blockThreshold;
+    mapView.marker(tgt.x, tgt.y, { color: '#2ecc71' });   // correct spot
+    mapView.marker(x, y, { color: '#e74c3c' });            // your tap
+    if (hit) markBlockCorrect(); else markBlockWrong();
+  }
+
+  function submitBlockAnswer() {
+    if (!blockTarget) return;
+    const ans = dom.dropdown.value;
+    if (!ans) return;
+    if (ans === blockLabel(blockTarget)) markBlockCorrect();
+    else markBlockWrong();
+  }
+
+  function setBlockStyle(s) {
+    if (s === blockStyle) return;
+    blockStyle = s;
+    blockTarget = null;
+    mapView.clearMarkers();
+    showFeedback('');
+    dom.inputRow.style.display = 'none';
+    showPrompt(`Press "New" to start. ${blockStyle === 'locate' ? "You'll tap where a block is." : "You'll name the highlighted block."}`);
   }
 
   function updateScore() {
@@ -311,6 +433,7 @@ export function createQuiz({ dom }) {
     .trim();
 
   function submitAnswer() {
+    if (mode === 'blocks') { submitBlockAnswer(); return; }
     if (!target) return;
     const answer = answerMethod === 'dropdown' ? dom.dropdown.value : dom.textbox.value.trim();
     if (!answer) return;
@@ -369,30 +492,36 @@ export function createQuiz({ dom }) {
   // Random-only controls (New / Skip / Retry Missed) are hidden in Click
   // selection and in Explore.
   function applyControlVisibility() {
-    const randomOnly = (mode === 'test' && selection === 'random');
-    dom.newQ.style.display = randomOnly ? '' : 'none';
-    dom.missed.style.display = randomOnly ? '' : 'none';
-    dom.skip.style.display = randomOnly ? '' : 'none';
+    const testRandom = (mode === 'test' && selection === 'random');
+    dom.newQ.style.display = (testRandom || mode === 'blocks') ? '' : 'none';
+    dom.missed.style.display = testRandom ? '' : 'none';
+    dom.skip.style.display = testRandom ? '' : 'none';
   }
 
   function setMode(newMode) {
     mode = newMode;
     clearAllMarksComplete();
+    if (mapView) mapView.clearMarkers();
     target = null;
+    blockTarget = null;
     useMissedPool = false;
+    dom.testToggles.style.display = mode === 'test' ? 'flex' : 'none';
+    dom.blocksToggles.style.display = mode === 'blocks' ? 'flex' : 'none';
     if (mode === 'explore') {
-      dom.testToggles.style.display = 'none';
       dom.inputRow.style.display = 'none';
       showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
-      showFeedback('');
-    } else {
-      dom.testToggles.style.display = 'flex';
+    } else if (mode === 'blocks') {
+      dom.inputRow.style.display = 'none';
+      showPrompt(blockList.length
+        ? `Press "New" to start. ${blockStyle === 'locate' ? "You'll tap where a block is." : "You'll name the highlighted block."}`
+        : 'No address-block data for this district. Re-import it with “Address blocks” enabled.');
+    } else { // test
       dom.inputRow.style.display = 'flex';
       dom.dropdown.style.display = answerMethod === 'dropdown' ? '' : 'none';
       dom.textbox.style.display = answerMethod === 'type' ? '' : 'none';
       showPrompt(selection === 'random' ? 'Press "New" to start.' : 'Click any street to be quizzed on it.');
-      showFeedback('');
     }
+    showFeedback('');
     applyControlVisibility();
   }
 
@@ -420,6 +549,7 @@ export function createQuiz({ dom }) {
   }
 
   function startNew() {
+    if (mode === 'blocks') { newBlockQuestion(); return; }
     if (mode === 'explore') {
       showPrompt('Tap any street. (Switch to Test mode to be quizzed.)');
       return;
@@ -477,6 +607,13 @@ export function createQuiz({ dom }) {
       dom.answerTabs.forEach(x => x.classList.remove('active'));
       t.classList.add('active');
       setAnswerMethod(t.dataset.answer);
+    });
+  });
+  dom.blockStyleTabs.forEach(t => {
+    t.addEventListener('click', () => {
+      dom.blockStyleTabs.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      setBlockStyle(t.dataset.blockstyle);
     });
   });
   dom.newQ.addEventListener('click', startNew);
