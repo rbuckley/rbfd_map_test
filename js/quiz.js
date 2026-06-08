@@ -29,6 +29,7 @@ export function createQuiz({ dom }) {
   let asked = new Set();
   let useMissedPool = false;
   // Blocks mode
+  let blockIndex = {};           // street -> [{block, x, y, count}] (from district.blocks)
   let blockList = [];            // [{street, block, x, y, count}]
   let blockThreshold = 150;      // proximity (map units) counted as correct in Locate
   let blockStyle = 'locate';     // 'locate' | 'identify'
@@ -78,8 +79,9 @@ export function createQuiz({ dom }) {
     blockTarget = null;
 
     // Build the Blocks index from district.blocks.
+    blockIndex = district.blocks || {};
     blockList = [];
-    for (const [street, arr] of Object.entries(district.blocks || {})) {
+    for (const [street, arr] of Object.entries(blockIndex)) {
       for (const b of arr) blockList.push({ street, block: b.block, x: b.x, y: b.y, count: b.count });
     }
     blockThreshold = computeBlockThreshold(blockList);
@@ -332,8 +334,6 @@ export function createQuiz({ dom }) {
   }
 
   // --- Blocks mode ---
-  const blockLabel = b => `${b.street} – ${b.block} block`;
-
   function newBlockQuestion() {
     mapView.clearMarkers();
     showFeedback('');
@@ -342,25 +342,33 @@ export function createQuiz({ dom }) {
       showPrompt('No address-block data for this district. Re-import it with “Address blocks” enabled.');
       return;
     }
-    blockTarget = blockList[Math.floor(Math.random() * blockList.length)];
     if (blockStyle === 'locate') {
+      blockTarget = blockList[Math.floor(Math.random() * blockList.length)];
       dom.inputRow.style.display = 'none';
       showPrompt(`Tap the ${blockTarget.block} block of ${blockTarget.street}.`);
     } else {
+      // Identify: assume the street is known — quiz which block along it is lit.
+      // Prefer streets with 2+ blocks so the choice is meaningful.
+      const streets = Object.keys(blockIndex);
+      const multi = streets.filter(s => blockIndex[s].length >= 2);
+      const street = (multi.length ? multi : streets)[Math.floor(Math.random() * (multi.length ? multi.length : streets.length))];
+      const arr = blockIndex[street];
+      const b = arr[Math.floor(Math.random() * arr.length)];
+      blockTarget = { street, block: b.block, x: b.x, y: b.y, count: b.count };
       mapView.marker(blockTarget.x, blockTarget.y, { color: '#ff8a3d' });
       mapView.panToPoint(blockTarget.x, blockTarget.y);
       setupBlockDropdown(blockTarget);
       dom.inputRow.style.display = 'flex';
       dom.dropdown.style.display = ''; dom.textbox.style.display = 'none';
-      showPrompt('Which block is highlighted? Pick it from the list.');
+      showPrompt(`Which block of ${blockTarget.street} is highlighted?`);
     }
   }
 
+  // Distractors are the other blocks on the SAME street (the street is given).
   function setupBlockDropdown(tgt) {
-    const others = shuffle(blockList.filter(b => b !== tgt)).slice(0, 6);
-    const chosen = shuffle([tgt, ...others]);
+    const opts = shuffle(blockIndex[tgt.street].map(b => b.block));
     dom.dropdown.innerHTML = '<option value="">-- choose --</option>' +
-      chosen.map(b => `<option value="${blockLabel(b)}">${blockLabel(b)}</option>`).join('');
+      opts.map(n => `<option value="${n}">${n} block</option>`).join('');
   }
 
   function blocksAdvance() { if (mode === 'blocks') newBlockQuestion(); }
@@ -398,7 +406,7 @@ export function createQuiz({ dom }) {
     if (!blockTarget) return;
     const ans = dom.dropdown.value;
     if (!ans) return;
-    if (ans === blockLabel(blockTarget)) markBlockCorrect();
+    if (Number(ans) === blockTarget.block) markBlockCorrect();
     else markBlockWrong();
   }
 
