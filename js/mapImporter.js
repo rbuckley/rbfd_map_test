@@ -242,6 +242,8 @@ export function extractOuterRing(geojson) {
   return null;
 }
 
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+
 // Geocode a place name to boundary candidates (Nominatim). Returns entries with
 // a usable polygon boundary and the relation osm_id for the Overpass area.
 async function geocodeCity(query) {
