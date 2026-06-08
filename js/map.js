@@ -138,11 +138,26 @@ export function createMapView(svg) {
     }
   }
 
-  // Convert a screen point to content-space coords (accounting for rotation).
+  // Convert a screen point to content-space coords. Uses the SVG's own
+  // transform (handles viewBox, preserveAspectRatio letterboxing, and the
+  // rotation group) when available; falls back to a manual "xMidYMid meet"
+  // calculation otherwise (e.g. headless test environments).
   function clientToContent(clientX, clientY) {
+    if (rotG.getScreenCTM && svg.createSVGPoint) {
+      const ctm = rotG.getScreenCTM();
+      if (ctm) {
+        const p = svg.createSVGPoint();
+        p.x = clientX; p.y = clientY;
+        const c = p.matrixTransform(ctm.inverse());
+        return [c.x, c.y];
+      }
+    }
     const r = svg.getBoundingClientRect();
-    const rx = vb.x + (clientX - r.left) / r.width * vb.w;
-    const ry = vb.y + (clientY - r.top) / r.height * vb.h;
+    const scale = Math.min(r.width / vb.w, r.height / vb.h); // uniform "meet" scale
+    const offX = (r.width - vb.w * scale) / 2;               // letterbox offsets (xMid/yMid)
+    const offY = (r.height - vb.h * scale) / 2;
+    const rx = vb.x + (clientX - r.left - offX) / scale;
+    const ry = vb.y + (clientY - r.top - offY) / scale;
     return unrotatePoint(rx, ry);
   }
 
