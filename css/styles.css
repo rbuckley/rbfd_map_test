@@ -247,13 +247,21 @@ body {
   background: var(--bg); color: var(--text); border: 1px solid var(--accent2);
   border-radius: 6px; font-size: 13px;
 }
-.rename-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
-.rename-item input {
+.rename-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; flex-wrap: wrap; }
+.rename-item input[type="text"] {
   flex: 1; min-width: 0; padding: 4px 6px; background: var(--bg); color: var(--text);
   border: 1px solid #2d4a6f; border-radius: 4px; font-size: 12px;
 }
-.rename-item input:focus { border-color: var(--accent); outline: none; }
-.rename-item.edited input { border-color: var(--accent); }
+.rename-item input[type="text"]:focus { border-color: var(--accent); outline: none; }
+.rename-item.edited input[type="text"] { border-color: var(--accent); }
+.rename-item input[type="checkbox"] { flex: 0 0 auto; width: 15px; height: 15px; }
+/* Merge / unmerge chrome */
+.rename-toolbar { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.rename-badge { font-size: 11px; color: var(--accent); white-space: nowrap; }
+.rename-unmerge { font-size: 11px; padding: 3px 7px; }
+.rename-sub { flex-basis: 100%; padding-left: 24px; display: flex; flex-direction: column; gap: 2px; }
+.rename-sub-item { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--dim); }
+.rename-split { font-size: 11px; line-height: 1; padding: 1px 6px; }
 
 /* === District builder overlay === */
 .builder-overlay {

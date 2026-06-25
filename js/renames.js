@@ -76,6 +76,17 @@ export function reverseDisplayToOriginal(originalStreets, renames) {
   return out;
 }
 
+// displayName -> [originalName, ...]. A display backed by 2+ originals is a
+// merged street; its array is the constituent sections (used by merge/unmerge).
+export function displayToOriginals(originalStreets, renames) {
+  const out = {};
+  for (const orig of originalStreets || []) {
+    const disp = (renames && has(renames, orig)) ? renames[orig] : orig;
+    (out[disp] || (out[disp] = [])).push(orig);
+  }
+  return out;
+}
+
 // A full record with renames baked into both the data and the svgMarkup string,
 // ready for exportDistrictFiles (so a correction can be committed to data/).
 export function bakeRenamedRecord(original, renames) {

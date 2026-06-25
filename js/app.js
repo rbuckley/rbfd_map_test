@@ -6,7 +6,7 @@ import { createQuiz } from './quiz.js';
 import { openBuilder, exportDistrictFiles } from './builder.js';
 import { openMapImporter } from './mapImporter.js';
 import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict, exportDistrictsBundle, importDistrictsBundle, loadRenames, saveRenames } from './storage.js';
-import { applyRenamesToRecord, applyRenamesToSvg, reverseDisplayToOriginal, bakeRenamedRecord } from './renames.js';
+import { applyRenamesToRecord, applyRenamesToSvg, reverseDisplayToOriginal, displayToOriginals, bakeRenamedRecord } from './renames.js';
 
 function gatherDom() {
   const $ = id => document.getElementById(id);
@@ -60,7 +60,16 @@ async function main() {
     currentOriginal = original;
     currentDistrictId = id;
     currentRenames = loadRenames(id);
-    const district = applyRenamesToRecord(original, currentRenames);
+    renderDistrict();
+    saveSelectedDistrict(id);
+  }
+
+  // Derive the live view from the cached pristine record + current overrides.
+  // Reused by switchDistrict (after a fetch) and rerenderCurrent (no fetch) —
+  // the latter lets unmerge rebuild the original separate sections cleanly.
+  function renderDistrict() {
+    const id = currentDistrictId;
+    const district = applyRenamesToRecord(currentOriginal, currentRenames);
     currentDistrict = district;
     currentSource = (listDistricts().find(d => d.id === id) || {}).source || 'builtin';
     mapWrap.innerHTML = district.svgMarkup;   // markup still carries original names
@@ -77,11 +86,11 @@ async function main() {
     });
     hideRenameRow();
     if (renameManager.classList.contains('open')) renderRenameManager();
-    saveSelectedDistrict(id);
     renderPicker(id);
     // Only user-created districts can be deleted.
     document.getElementById('deleteDistrictBtn').style.display = currentSource === 'user' ? '' : 'none';
   }
+  function rerenderCurrent() { if (currentOriginal) renderDistrict(); }
 
   // Header: an <h1> title for a single district, or a <select> when there are
   // several. Re-rendered after each switch so the current district stays shown.
@@ -123,14 +132,31 @@ async function main() {
   const renameCancel = document.getElementById('renameCancel');
   const renameToggle = document.getElementById('renameToggle');
   const renameManager = document.getElementById('renameManager');
+  const mergeWithBtn = document.getElementById('mergeWithBtn');
+  const unmergeBtn = document.getElementById('unmergeBtn');
   let renameTargetOld = null;
+  let pendingMergeFrom = null;   // armed by "Merge with…": next Explore tap is the partner
 
-  function hideRenameRow() { renameRow.style.display = 'none'; renameTargetOld = null; }
-  // Tapping a street in Explore offers an inline rename for that street.
+  function hideRenameRow() {
+    renameRow.style.display = 'none';
+    renameTargetOld = null;
+    pendingMergeFrom = null;
+    renameInput.style.display = ''; renameSave.style.display = ''; mergeWithBtn.style.display = '';
+  }
+  // Tapping a street in Explore: either complete an armed merge, or offer the
+  // inline rename / merge / unmerge controls for that street.
   function onExploreSelect(name) {
+    if (pendingMergeFrom) {
+      const first = pendingMergeFrom;
+      hideRenameRow();
+      if (name !== first && window.confirm(`Merge “${name}” into “${first}”?`)) mergeSections([first, name], first);
+      return;
+    }
     renameTargetOld = name;
     renameLabel.textContent = 'Rename:';
     renameInput.value = name;
+    const origs = displayToOriginals(currentOriginal.streets, currentRenames)[name] || [name];
+    unmergeBtn.style.display = origs.length >= 2 ? '' : 'none';
     renameRow.style.display = 'flex';
   }
 
@@ -153,6 +179,54 @@ async function main() {
     if (renameManager.classList.contains('open')) renderRenameManager();
   }
 
+  // Merge several sections (by display name) into one street named `keeper`.
+  // Override every constituent original to `keeper`; fold live in place (keeps
+  // zoom) by reusing quiz.applyRename, which collapses the SVG groups.
+  function mergeSections(displayNames, keeperRaw) {
+    const keeper = (keeperRaw || '').trim();
+    if (!keeper || !currentOriginal) return;
+    const groups = displayToOriginals(currentOriginal.streets, currentRenames);
+    const origs = new Set();
+    for (const d of displayNames) for (const o of (groups[d] || [d])) origs.add(o);
+    for (const o of (groups[keeper] || [])) origs.add(o);
+    if (origs.size < 2) return;
+    for (const o of origs) {
+      if (o === keeper) delete currentRenames[o];
+      else currentRenames[o] = keeper;
+    }
+    saveRenames(currentDistrictId, currentRenames);
+    for (const d of displayNames) if (d !== keeper) quiz.applyRename(d, keeper);
+    currentDistrict = applyRenamesToRecord(currentOriginal, currentRenames);
+    if (renameManager.classList.contains('open')) renderRenameManager();
+  }
+
+  // Split a merged street back into all its original sections (drop overrides,
+  // re-render from pristine so the separate SVG groups reappear).
+  function unmergeSection(display) {
+    const origs = displayToOriginals(currentOriginal.streets, currentRenames)[display] || [];
+    if (origs.length < 2) return;
+    for (const o of origs) delete currentRenames[o];
+    saveRenames(currentDistrictId, currentRenames);
+    rerenderCurrent();
+  }
+  // Pull one original section out of a merge, leaving the rest merged.
+  function splitOffSection(originalName) {
+    delete currentRenames[originalName];
+    saveRenames(currentDistrictId, currentRenames);
+    rerenderCurrent();
+  }
+
+  mergeWithBtn.addEventListener('click', () => {
+    if (!renameTargetOld) return;
+    pendingMergeFrom = renameTargetOld;
+    renameLabel.textContent = `Tap another street to merge into “${renameTargetOld}”`;
+    renameInput.style.display = 'none'; renameSave.style.display = 'none';
+    mergeWithBtn.style.display = 'none'; unmergeBtn.style.display = 'none';
+  });
+  unmergeBtn.addEventListener('click', () => {
+    if (renameTargetOld) { const t = renameTargetOld; hideRenameRow(); unmergeSection(t); }
+  });
+
   renameSave.addEventListener('click', () => {
     if (renameTargetOld) { renameStreet(renameTargetOld, renameInput.value); hideRenameRow(); }
   });
@@ -164,32 +238,75 @@ async function main() {
   // Leaving Explore dismisses the inline editor.
   document.querySelectorAll('#modeTabs .mode-tab').forEach(t => t.addEventListener('click', hideRenameRow));
 
-  // Bulk editor: a filterable list of every street with an editable name.
+  // Bulk editor: a filterable list of every street — rename inline, select 2+
+  // to merge, or unmerge/split a merged street back into its sections.
   function renderRenameManager() {
     renameManager.innerHTML = '';
+    const groups = displayToOriginals(currentOriginal.streets, currentRenames);
+    const selected = new Set();
+    const toolbar = document.createElement('div'); toolbar.className = 'rename-toolbar';
+    const mergeBtn = document.createElement('button'); mergeBtn.className = 'btn';
+    toolbar.appendChild(mergeBtn);
     const filter = document.createElement('input');
     filter.className = 'rename-filter';
     filter.type = 'text'; filter.placeholder = 'Filter streets…';
     const listWrap = document.createElement('div');
-    renameManager.append(filter, listWrap);
+    renameManager.append(toolbar, filter, listWrap);
     const names = [...currentDistrict.streets].sort((a, b) => a.localeCompare(b));
+    const refreshMergeBtn = () => {
+      mergeBtn.textContent = `Merge selected (${selected.size})`;
+      mergeBtn.disabled = selected.size < 2;
+    };
+    mergeBtn.addEventListener('click', () => {
+      if (selected.size < 2) return;
+      const chosen = [...selected];
+      const keeper = window.prompt('Name for the merged street:', chosen[0]);
+      if (keeper && keeper.trim()) mergeSections(chosen, keeper);   // re-renders the manager
+    });
     const draw = q => {
       const ql = (q || '').toLowerCase();
       listWrap.innerHTML = '';
       for (const name of names) {
         if (ql && !name.toLowerCase().includes(ql)) continue;
         const row = document.createElement('div'); row.className = 'rename-item';
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = selected.has(name);
+        cb.title = 'Select to merge';
+        cb.addEventListener('change', () => { cb.checked ? selected.add(name) : selected.delete(name); refreshMergeBtn(); });
         const inp = document.createElement('input'); inp.type = 'text'; inp.value = name;
         inp.addEventListener('change', () => {
           const v = inp.value.trim();
           if (v && v !== name) renameStreet(name, v);
           else inp.value = name;
         });
-        row.appendChild(inp); listWrap.appendChild(row);
+        row.append(cb, inp);
+        const origs = groups[name] || [name];
+        if (origs.length >= 2) {
+          const badge = document.createElement('span'); badge.className = 'rename-badge'; badge.textContent = `merged ×${origs.length}`;
+          const un = document.createElement('button'); un.className = 'btn rename-unmerge'; un.textContent = 'Unmerge';
+          un.title = 'Split back into the original sections';
+          un.addEventListener('click', () => unmergeSection(name));
+          row.append(badge, un);
+          const sub = document.createElement('div'); sub.className = 'rename-sub';
+          for (const o of origs) {
+            const s = document.createElement('div'); s.className = 'rename-sub-item';
+            const lbl = document.createElement('span'); lbl.textContent = o;
+            s.appendChild(lbl);
+            if (o !== name) {   // the anchor section (== display name) has no override to drop
+              const x = document.createElement('button'); x.className = 'rename-split'; x.textContent = '✕';
+              x.title = `Split “${o}” out`;
+              x.addEventListener('click', () => splitOffSection(o));
+              s.appendChild(x);
+            }
+            sub.appendChild(s);
+          }
+          row.appendChild(sub);
+        }
+        listWrap.appendChild(row);
       }
     };
     filter.addEventListener('input', () => draw(filter.value));
     draw('');
+    refreshMergeBtn();
   }
   renameToggle.addEventListener('click', () => {
     renameManager.classList.toggle('open');
