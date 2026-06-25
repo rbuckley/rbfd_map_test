@@ -4,6 +4,8 @@
 // exclusions, confusion groups) and the rendered SVG are injected, so this
 // engine is map-agnostic.
 
+import { mergeBlockEntries } from './renames.js';
+
 export function createQuiz({ dom }) {
   // Per-district refs — (re)assigned by setDistrict so we can switch districts
   // without re-wiring the persistent controls.
@@ -11,6 +13,7 @@ export function createQuiz({ dom }) {
   let svg = null;
   let mapView = null;
   let persist = () => {};
+  let onSelect = null;           // notified when a street is tapped in Explore
   let STREET_NAMES = [];
   let confusionGroupList = [];   // array of name-arrays (any number of groups)
   let defaultExcluded = new Set();
@@ -62,6 +65,7 @@ export function createQuiz({ dom }) {
     svg = opts.svg;
     mapView = opts.mapView;
     persist = opts.persist;
+    onSelect = opts.onSelect || null;
     const initial = opts.initial || {};
 
     STREET_NAMES = district.streets;
@@ -84,11 +88,7 @@ export function createQuiz({ dom }) {
 
     // Build the Blocks index from district.blocks.
     blockIndex = district.blocks || {};
-    blockList = [];
-    for (const [street, arr] of Object.entries(blockIndex)) {
-      for (const b of arr) blockList.push({ street, block: b.block, x: b.x, y: b.y, count: b.count });
-    }
-    blockThreshold = computeBlockThreshold(blockList);
+    rebuildBlockState();
     syncTabUI();
 
     // Build the street element index from the injected SVG.
@@ -113,6 +113,15 @@ export function createQuiz({ dom }) {
     dom.blocksToggles.style.display = 'none';
     showPrompt('Tap any street to see its name. Pinch or scroll to zoom. Drag to pan.');
     showFeedback('');
+  }
+
+  // (Re)derive the flat block list + proximity threshold from blockIndex.
+  function rebuildBlockState() {
+    blockList = [];
+    for (const [street, arr] of Object.entries(blockIndex)) {
+      for (const b of arr) blockList.push({ street, block: b.block, x: b.x, y: b.y, count: b.count });
+    }
+    blockThreshold = computeBlockThreshold(blockList);
   }
 
   function computeBlockThreshold(list) {
@@ -193,6 +202,7 @@ export function createQuiz({ dom }) {
     if (mode === 'explore') {
       showFeedback(name, 'info');
       flashHover(name);
+      if (onSelect) onSelect(name);
       return;
     }
     if (mode !== 'test') return;
@@ -819,5 +829,43 @@ export function createQuiz({ dom }) {
     handleBlockTap(e);
   }
 
-  return { setDistrict, enterExam, exitExam, examInProgress };
+  // Rename a street live, in place (keeps zoom/pan). Propagates to all six
+  // reference sites; a collision with an existing name merges the two. The
+  // persisted override layer (js/app.js) is the source of truth across loads;
+  // this mirrors it on the live state so the map updates without a reload.
+  function applyRename(oldName, newName) {
+    oldName = oldName == null ? '' : String(oldName);
+    newName = (newName == null ? '' : String(newName)).trim();
+    if (!oldName || !newName || oldName === newName || !streetEls[oldName]) return;
+    const merging = !!streetEls[newName] && streetEls[newName] !== streetEls[oldName];
+
+    // DOM: rename the group, or fold its paths into the surviving group.
+    const oldEl = streetEls[oldName];
+    if (merging) {
+      const keep = streetEls[newName];
+      while (oldEl.firstChild) keep.appendChild(oldEl.firstChild);
+      if (oldEl.parentNode) oldEl.parentNode.removeChild(oldEl);
+    } else {
+      oldEl.setAttribute('data-name', newName);
+      streetEls[newName] = oldEl;
+    }
+    delete streetEls[oldName];
+
+    STREET_NAMES = [...new Set(STREET_NAMES.map(n => (n === oldName ? newName : n)))];
+    confusionGroupList = confusionGroupList.map(grp => [...new Set(grp.map(n => (n === oldName ? newName : n)))]);
+    for (const set of [defaultExcluded, userExcluded]) {
+      if (set.has(oldName)) { set.delete(oldName); set.add(newName); }
+    }
+    if (blockIndex[oldName]) {
+      blockIndex[newName] = mergeBlockEntries((blockIndex[newName] || []).concat(blockIndex[oldName]));
+      delete blockIndex[oldName];
+      rebuildBlockState();
+    }
+    if (target === oldName) target = newName;
+    if (blockTarget && blockTarget.street === oldName) blockTarget.street = newName;
+    updateExclusionCount();
+    if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
+  }
+
+  return { setDistrict, enterExam, exitExam, examInProgress, applyRename };
 }

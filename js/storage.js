@@ -93,6 +93,22 @@ function writeKey(key, value) {
 
 const DISTRICTS_KEY = `${KEY_PREFIX}districts`;
 const SELECTED_KEY = `${KEY_PREFIX}selectedDistrict`;
+const RENAMES_KEY = `${KEY_PREFIX}renames`;
+
+// Per-district street-name overrides: { districtId: { originalName: newName } }.
+// A non-destructive layer applied at load (see js/renames.js), kept separate
+// from progress so resetting a score never drops corrections. Works for both
+// built-in and user districts.
+export function loadRenames(districtId) {
+  const all = readKey(RENAMES_KEY, {});
+  return all[districtId] || {};
+}
+export function saveRenames(districtId, map) {
+  const all = readKey(RENAMES_KEY, {});
+  if (map && Object.keys(map).length) all[districtId] = map;
+  else delete all[districtId];
+  writeKey(RENAMES_KEY, all);
+}
 
 // User-created districts: a map keyed by id. Each value is a full district
 // record { id, name, viewBox, streets, excluded, confusionGroups, svgMarkup,

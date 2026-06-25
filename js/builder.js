@@ -301,6 +301,21 @@ export function openBuilder({ existing = null, editable = false, onSaved } = {})
     }
   }
 
+  // Renaming a street must carry its block data, confusion-group membership and
+  // exclusion across with it (the name is a key in all three), else they orphan.
+  function renameInDraft(oldName, newName) {
+    if (draft.blocks && draft.blocks[oldName]) {
+      draft.blocks[newName] = (draft.blocks[newName] || []).concat(draft.blocks[oldName]);
+      delete draft.blocks[oldName];
+    }
+    if (draft.confusionGroups) {
+      for (const g of Object.keys(draft.confusionGroups)) {
+        draft.confusionGroups[g] = [...new Set(draft.confusionGroups[g].map(n => (n === oldName ? newName : n)))];
+      }
+    }
+    if (draft.excluded && draft.excluded.has(oldName)) { draft.excluded.delete(oldName); draft.excluded.add(newName); }
+  }
+
   function renderList() {
     $('bCount').textContent = draft.streets.length;
     const list = $('bList');
@@ -310,7 +325,11 @@ export function openBuilder({ existing = null, editable = false, onSaved } = {})
       row.className = 'builder-row';
       const name = document.createElement('input');
       name.value = st.name; name.className = 'builder-row-name';
-      name.addEventListener('change', () => { st.name = name.value.trim() || st.name; name.value = st.name; redraw(); });
+      name.addEventListener('change', () => {
+        const oldName = st.name, newName = name.value.trim() || st.name;
+        if (newName !== oldName) renameInDraft(oldName, newName);
+        st.name = newName; name.value = newName; redraw();
+      });
       const excl = document.createElement('input');
       excl.type = 'checkbox'; excl.checked = draft.excluded.has(st.name); excl.title = 'Exclude from quiz';
       excl.addEventListener('change', () => { excl.checked ? draft.excluded.add(st.name) : draft.excluded.delete(st.name); redraw(); });

@@ -47,6 +47,7 @@
           <button class="menu-item" id="editDistrictBtn">✎ Edit</button>
           <button class="menu-item" id="examModeBtn">🎓 Exam mode</button>
           <button class="menu-item" id="deleteDistrictBtn" style="display:none;">🗑 Delete</button>
+          <button class="menu-item" id="exportMapBtn">⤓ Export this map</button>
           <button class="menu-item" id="exportAllBtn">⤓ Export all</button>
           <label class="menu-item" id="importAllBtn">⤒ Import<input id="importAllInput" type="file" accept="application/json,.json" hidden></label>
         </div>
@@ -66,10 +67,18 @@
       <button id="excludeBtn">Exclude</button>
     </div>
     <div class="feedback" id="feedback"></div>
+    <div class="rename-row" id="renameRow" style="display:none;">
+      <span class="rename-label" id="renameLabel">Rename</span>
+      <input id="renameInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="Corrected street name"/>
+      <button class="btn primary" id="renameSave">Save</button>
+      <button class="btn" id="renameCancel">Cancel</button>
+    </div>
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
       <button id="exclusionToggle">Manage Exclusions (0)</button>
+      <button id="renameToggle">✎ Edit street names</button>
     </div>
     <div id="exclusionManager"></div>
+    <div id="renameManager"></div>
     <div class="legend">
       <span><i class="swatch"></i>Street</span>
       <span><i class="swatch target"></i>Asked street</span>

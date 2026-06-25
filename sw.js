@@ -1,6 +1,6 @@
 // Service worker: cache-first offline support. Bump CACHE_VERSION whenever the
 // app shell or map data changes so clients pull fresh files.
-const CACHE_VERSION = 'rbfd-map-v34';
+const CACHE_VERSION = 'rbfd-map-v35';
 
 const CORE_ASSETS = [
   './',
@@ -13,6 +13,7 @@ const CORE_ASSETS = [
   './js/builder.js',
   './js/mapImporter.js',
   './js/storage.js',
+  './js/renames.js',
   './data/d1/streets.json',
   './data/d1/map.svg',
   './data/d2/streets.json',

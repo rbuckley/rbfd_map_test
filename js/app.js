@@ -3,9 +3,10 @@
 import { DEFAULT_DISTRICT, loadDistrict, listDistricts } from './districts.js';
 import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
-import { openBuilder } from './builder.js';
+import { openBuilder, exportDistrictFiles } from './builder.js';
 import { openMapImporter } from './mapImporter.js';
-import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict, exportDistrictsBundle, importDistrictsBundle } from './storage.js';
+import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict, exportDistrictsBundle, importDistrictsBundle, loadRenames, saveRenames } from './storage.js';
+import { applyRenamesToRecord, applyRenamesToSvg, reverseDisplayToOriginal, bakeRenamedRecord } from './renames.js';
 
 function gatherDom() {
   const $ = id => document.getElementById(id);
@@ -39,23 +40,32 @@ function gatherDom() {
 async function main() {
   const mapWrap = document.querySelector('.map-wrap');
   const quiz = createQuiz({ dom: gatherDom() });
-  let currentDistrict = null;   // full record of the loaded district
+  let currentDistrict = null;   // renamed/transformed record shown by the quiz
+  let currentOriginal = null;   // pristine record from loadDistrict (pre-rename)
+  let currentRenames = {};      // { originalName: displayName } overrides
+  let currentDistrictId = null;
   let currentSource = null;     // 'builtin' | 'user'
 
-  // Load a district and (re)point the quiz + map view at it.
+  // Load a district and (re)point the quiz + map view at it. Street-name
+  // overrides are applied as a non-destructive layer on top of the shipped data.
   async function switchDistrict(id) {
     if (quiz.examInProgress()) return;   // a proctored exam locks the district
-    let district;
+    let original;
     try {
-      district = await loadDistrict(id);
+      original = await loadDistrict(id);
     } catch (err) {
       mapWrap.innerHTML = `<div style="padding:24px;color:var(--red)">Failed to load map data: ${err.message}<br><br>This app must be served over HTTP (e.g. a local server or GitHub Pages), not opened directly from the filesystem.</div>`;
       return;
     }
+    currentOriginal = original;
+    currentDistrictId = id;
+    currentRenames = loadRenames(id);
+    const district = applyRenamesToRecord(original, currentRenames);
     currentDistrict = district;
     currentSource = (listDistricts().find(d => d.id === id) || {}).source || 'builtin';
-    mapWrap.innerHTML = district.svgMarkup;
+    mapWrap.innerHTML = district.svgMarkup;   // markup still carries original names
     const svg = mapWrap.querySelector('#map');
+    applyRenamesToSvg(svg, currentRenames);   // patch data-names + merge groups
     const mapView = createMapView(svg);
     quiz.setDistrict({
       district,
@@ -63,7 +73,10 @@ async function main() {
       mapView,
       initial: loadProgress(id),
       persist: state => saveProgress(id, state),
+      onSelect: onExploreSelect,
     });
+    hideRenameRow();
+    if (renameManager.classList.contains('open')) renderRenameManager();
     saveSelectedDistrict(id);
     renderPicker(id);
     // Only user-created districts can be deleted.
@@ -100,6 +113,94 @@ async function main() {
   mapsMenu.addEventListener('click', () => { mapsMenu.style.display = 'none'; });
   document.addEventListener('click', e => {
     if (e.target !== mapsBtn && !mapsMenu.contains(e.target)) mapsMenu.style.display = 'none';
+  });
+
+  // --- Street-name editing ---
+  const renameRow = document.getElementById('renameRow');
+  const renameInput = document.getElementById('renameInput');
+  const renameLabel = document.getElementById('renameLabel');
+  const renameSave = document.getElementById('renameSave');
+  const renameCancel = document.getElementById('renameCancel');
+  const renameToggle = document.getElementById('renameToggle');
+  const renameManager = document.getElementById('renameManager');
+  let renameTargetOld = null;
+
+  function hideRenameRow() { renameRow.style.display = 'none'; renameTargetOld = null; }
+  // Tapping a street in Explore offers an inline rename for that street.
+  function onExploreSelect(name) {
+    renameTargetOld = name;
+    renameLabel.textContent = 'Rename:';
+    renameInput.value = name;
+    renameRow.style.display = 'flex';
+  }
+
+  // The one rename entry point: resolve which shipped name is being edited,
+  // record the override, persist it, and update the live map. A clash with an
+  // existing name merges the two (after confirmation).
+  function renameStreet(displayOld, newRaw) {
+    const newName = (newRaw || '').trim();
+    if (!newName || newName === displayOld || !currentDistrict) return;
+    const rev = reverseDisplayToOriginal(currentOriginal.streets, currentRenames);
+    const orig = Object.prototype.hasOwnProperty.call(rev, displayOld) ? rev[displayOld] : displayOld;
+    if (currentDistrict.streets.includes(newName)) {
+      if (!window.confirm(`“${newName}” already exists. Merge “${displayOld}” into it?`)) return;
+    }
+    if (newName === orig) delete currentRenames[orig];
+    else currentRenames[orig] = newName;
+    saveRenames(currentDistrictId, currentRenames);
+    quiz.applyRename(displayOld, newName);
+    currentDistrict = applyRenamesToRecord(currentOriginal, currentRenames);
+    if (renameManager.classList.contains('open')) renderRenameManager();
+  }
+
+  renameSave.addEventListener('click', () => {
+    if (renameTargetOld) { renameStreet(renameTargetOld, renameInput.value); hideRenameRow(); }
+  });
+  renameCancel.addEventListener('click', hideRenameRow);
+  renameInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { renameSave.click(); }
+    else if (e.key === 'Escape') hideRenameRow();
+  });
+  // Leaving Explore dismisses the inline editor.
+  document.querySelectorAll('#modeTabs .mode-tab').forEach(t => t.addEventListener('click', hideRenameRow));
+
+  // Bulk editor: a filterable list of every street with an editable name.
+  function renderRenameManager() {
+    renameManager.innerHTML = '';
+    const filter = document.createElement('input');
+    filter.className = 'rename-filter';
+    filter.type = 'text'; filter.placeholder = 'Filter streets…';
+    const listWrap = document.createElement('div');
+    renameManager.append(filter, listWrap);
+    const names = [...currentDistrict.streets].sort((a, b) => a.localeCompare(b));
+    const draw = q => {
+      const ql = (q || '').toLowerCase();
+      listWrap.innerHTML = '';
+      for (const name of names) {
+        if (ql && !name.toLowerCase().includes(ql)) continue;
+        const row = document.createElement('div'); row.className = 'rename-item';
+        const inp = document.createElement('input'); inp.type = 'text'; inp.value = name;
+        inp.addEventListener('change', () => {
+          const v = inp.value.trim();
+          if (v && v !== name) renameStreet(name, v);
+          else inp.value = name;
+        });
+        row.appendChild(inp); listWrap.appendChild(row);
+      }
+    };
+    filter.addEventListener('input', () => draw(filter.value));
+    draw('');
+  }
+  renameToggle.addEventListener('click', () => {
+    renameManager.classList.toggle('open');
+    if (renameManager.classList.contains('open')) renderRenameManager();
+  });
+
+  // Export the current map (with renames baked in) as committable files.
+  document.getElementById('exportMapBtn').addEventListener('click', () => {
+    if (!currentOriginal) return;
+    const msg = exportDistrictFiles(bakeRenamedRecord(currentOriginal, currentRenames));
+    window.alert(msg);
   });
 
   // Small chooser: draw on a map (auto-import) vs trace an image (manual).
