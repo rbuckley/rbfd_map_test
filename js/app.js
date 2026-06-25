@@ -44,6 +44,7 @@ async function main() {
 
   // Load a district and (re)point the quiz + map view at it.
   async function switchDistrict(id) {
+    if (quiz.examInProgress()) return;   // a proctored exam locks the district
     let district;
     try {
       district = await loadDistrict(id);
@@ -120,6 +121,11 @@ async function main() {
     ov.querySelector('#chImg').addEventListener('click', () => { close(); openBuilder({ onSaved }); });
     ov.querySelector('#chCancel').addEventListener('click', close);
   }
+
+  // Certification exam (proctored). Launches on the current district.
+  document.getElementById('examModeBtn').addEventListener('click', () => {
+    if (currentDistrict) quiz.enterExam(currentDistrict.id);
+  });
 
   // Builder entry points.
   document.getElementById('newDistrictBtn').addEventListener('click', chooseNewDistrict);

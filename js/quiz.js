@@ -34,6 +34,9 @@ export function createQuiz({ dom }) {
   let blockThreshold = 150;      // proximity (map units) counted as correct in Locate
   let blockStyle = 'locate';     // 'locate' | 'identify'
   let blockTarget = null;
+  // Certification exam (null when inactive). Fully isolated from practice score.
+  let exam = null;
+  let examUI = null;
 
   function save() {
     persist({ correct, total, missed, userExcluded });
@@ -54,6 +57,7 @@ export function createQuiz({ dom }) {
 
   // Load (or switch to) a district: rebind data + SVG and reset quiz state.
   function setDistrict(opts) {
+    if (exam) forceClearExam();   // a district switch aborts any stray exam
     district = opts.district;
     svg = opts.svg;
     mapView = opts.mapView;
@@ -96,8 +100,9 @@ export function createQuiz({ dom }) {
         handleStreetClick(g.dataset.name);
       });
     });
-    // Capture taps for Blocks "Locate" before they reach street handlers.
-    svg.addEventListener('click', handleBlockTap, true);
+    // One capture-phase listener handles both the Exam locate-tap and the
+    // Blocks "Locate" tap before they reach the per-street click handlers.
+    svg.addEventListener('click', handleMapCaptureTap, true);
 
     clearAllMarksComplete();
     updateScore();
@@ -184,6 +189,7 @@ export function createQuiz({ dom }) {
   }
 
   function handleStreetClick(name) {
+    if (exam) return;   // exam taps are handled in capture phase
     if (mode === 'explore') {
       showFeedback(name, 'info');
       flashHover(name);
@@ -392,6 +398,7 @@ export function createQuiz({ dom }) {
   // Locate: a tap anywhere on the map is the guess (capture phase, so it
   // pre-empts street click handlers).
   function handleBlockTap(e) {
+    if (exam) return;
     if (mode !== 'blocks' || blockStyle !== 'locate' || !blockTarget) return;
     e.stopPropagation();
     const [x, y] = mapView.clientToContent(e.clientX, e.clientY);
@@ -641,5 +648,176 @@ export function createQuiz({ dom }) {
     if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
   });
 
-  return { setDistrict };
+  // ===== Certification exam =====
+  // A proctored, locate-the-named-street exam. Runs on its own `exam` state and
+  // NEVER calls save()/persist — practice progress is untouched.
+  const escapeHtml = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function bindExamUI() {
+    if (examUI) return examUI;
+    const g = id => document.getElementById(id);
+    const u = {
+      setup: g('examSetup'), setupDistrict: g('examSetupDistrict'),
+      name: g('examName'), badge: g('examBadge'), coverage: g('examCoverage'),
+      pass: g('examPass'), start: g('examStart'), cancel: g('examCancel'),
+      bar: g('examBar'), progress: g('examProgress'), locate: g('examLocate'),
+      panel: g('examPanel'), submit: g('examSubmit'), dontKnow: g('examDontKnow'), end: g('examEnd'),
+      results: g('examResults'), resultTitle: g('examResultTitle'), resultBody: g('examResultBody'), done: g('examDone'),
+    };
+    u.start.addEventListener('click', startExam);
+    u.cancel.addEventListener('click', exitExam);
+    u.submit.addEventListener('click', () => { if (exam && exam.pickedName) commitAnswer(exam.pickedName); });
+    u.dontKnow.addEventListener('click', () => { if (exam) commitAnswer(null); });
+    u.end.addEventListener('click', () => { if (exam) finishExam(); });
+    u.done.addEventListener('click', exitExam);
+    u.name.addEventListener('input', updateStartEnabled);
+    u.badge.addEventListener('input', updateStartEnabled);
+    examUI = u;
+    return u;
+  }
+
+  function renderCoverageOptions(n) {
+    const presets = [25, 50].filter(p => p < n);           // only meaningful below full
+    const opts = [...presets.map(p => ({ label: `${p} questions`, count: p })), { label: `Full (${n})`, count: n }];
+    examUI.coverage.innerHTML = opts.map((o, i) =>
+      `<button type="button" class="mode-tab${i === opts.length - 1 ? ' active' : ''}" data-count="${o.count}">${o.label}</button>`).join('');
+    examUI.coverage.querySelectorAll('.mode-tab').forEach(b => b.addEventListener('click', () => {
+      examUI.coverage.querySelectorAll('.mode-tab').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    }));
+  }
+  const selectedCoverageCount = () => {
+    const b = examUI.coverage.querySelector('.mode-tab.active');
+    return b ? parseInt(b.dataset.count, 10) : 0;
+  };
+  function updateStartEnabled() {
+    examUI.start.disabled = !(examUI.name.value.trim() && examUI.badge.value.trim() && getActiveStreets().length > 0);
+  }
+
+  // Open the setup card (called from the Maps menu).
+  function enterExam(districtId) {
+    const u = bindExamUI();
+    const active = getActiveStreets();
+    exam = { phase: 'setup', examinee: { name: '', badge: '' }, districtId: districtId || (district && district.id),
+      passPct: 90, questions: [], index: 0, startTime: 0, endTime: 0, pickedEl: null, pickedName: null };
+    u.setupDistrict.textContent = `District: ${district ? district.name : ''} — ${active.length} active streets`;
+    u.name.value = ''; u.badge.value = ''; u.pass.value = '90';
+    renderCoverageOptions(active.length);
+    updateStartEnabled();
+    u.results.style.display = 'none';
+    u.setup.style.display = 'flex';
+  }
+
+  function startExam() {
+    const u = examUI;
+    const name = u.name.value.trim(), badge = u.badge.value.trim();
+    const active = getActiveStreets();
+    if (!name || !badge || !active.length) return;
+    const count = Math.min(selectedCoverageCount() || active.length, active.length);
+    let pass = parseInt(u.pass.value, 10);
+    if (!Number.isFinite(pass) || pass < 1) pass = 90;
+    if (pass > 100) pass = 100;
+    const pool = shuffle(active.slice()).slice(0, count);
+    exam = {
+      phase: 'running', examinee: { name, badge }, districtId: exam.districtId, passPct: pass,
+      questions: pool.map(s => ({ target: s, answer: null, correct: false })),
+      index: 0, startTime: Date.now(), endTime: 0, pickedEl: null, pickedName: null,
+    };
+    u.setup.style.display = 'none';
+    document.body.classList.add('exam-active');
+    const menu = document.getElementById('mapsMenu'); if (menu) menu.style.display = 'none';
+    clearAllMarksComplete();   // drop any practice marks (does not touch score)
+    u.bar.style.display = 'flex';
+    u.panel.style.display = 'flex';
+    renderExamQuestion();
+  }
+
+  function renderExamQuestion() {
+    const u = examUI, q = exam.questions[exam.index];
+    if (exam.pickedEl) exam.pickedEl.classList.remove('exam-pick');
+    exam.pickedEl = null; exam.pickedName = null;
+    u.progress.textContent = `Question ${exam.index + 1} of ${exam.questions.length}`;
+    u.locate.textContent = `Locate: ${q.target}`;
+    u.submit.disabled = true;
+  }
+
+  // Capture-phase tap during a running exam: select the tapped street (neutral
+  // highlight only) without revealing correctness; ignore empty-space taps.
+  function handleExamTap(e) {
+    e.stopPropagation();
+    let el = e.target;
+    while (el && el !== svg && !(el.classList && el.classList.contains('street'))) el = el.parentNode;
+    if (!el || !el.classList || !el.classList.contains('street')) return;
+    if (exam.pickedEl) exam.pickedEl.classList.remove('exam-pick');
+    exam.pickedEl = el; exam.pickedName = el.dataset.name;
+    el.classList.add('exam-pick');
+    examUI.submit.disabled = false;
+  }
+
+  function commitAnswer(answerName) {
+    const q = exam.questions[exam.index];
+    q.answer = answerName;
+    q.correct = answerName === q.target;   // strict: both are canonical street names
+    exam.index++;
+    if (exam.index >= exam.questions.length) finishExam();
+    else renderExamQuestion();
+  }
+
+  // Tally and show results. Unanswered questions (ending early) stay incorrect,
+  // so ending early can never inflate the score.
+  function finishExam() {
+    exam.endTime = Date.now();
+    exam.phase = 'results';
+    if (exam.pickedEl) { exam.pickedEl.classList.remove('exam-pick'); exam.pickedEl = null; }
+    document.body.classList.remove('exam-active');
+    examUI.bar.style.display = 'none';
+    examUI.panel.style.display = 'none';
+    const total = exam.questions.length;
+    const correct = exam.questions.filter(q => q.correct).length;
+    const pct = total ? Math.round(100 * correct / total) : 0;
+    const passed = pct >= exam.passPct;
+    const missed = exam.questions.filter(q => !q.correct).map(q => q.target);
+    const dur = Math.max(0, Math.round((exam.endTime - exam.startTime) / 1000));
+    const mm = String(Math.floor(dur / 60)).padStart(2, '0'), ss = String(dur % 60).padStart(2, '0');
+    examUI.resultTitle.textContent = passed ? '✅ Pass' : '❌ Fail';
+    examUI.resultBody.innerHTML = `
+      <div class="exam-result-score">${correct}/${total} <span style="font-size:16px;color:var(--dim)">(${pct}%)</span></div>
+      <div class="exam-verdict ${passed ? 'pass' : 'fail'}">${passed ? 'PASS' : 'FAIL'} — needed ${exam.passPct}%</div>
+      <div class="exam-meta">
+        <span>Examinee: ${escapeHtml(exam.examinee.name)} (${escapeHtml(exam.examinee.badge)})</span>
+        <span>District: ${escapeHtml(district ? district.name : '')}</span>
+        <span>Time: ${mm}:${ss}</span>
+      </div>
+      ${missed.length
+        ? `<div class="exam-missed"><b>Missed (${missed.length})</b><ul>${missed.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul></div>`
+        : '<div class="exam-missed">All streets located correctly. 🎉</div>'}`;
+    examUI.results.style.display = 'flex';
+  }
+
+  function hideExamUI() {
+    if (!examUI) return;
+    for (const k of ['setup', 'results', 'bar', 'panel']) examUI[k].style.display = 'none';
+  }
+  // Hard reset used when a district switch interrupts an exam.
+  function forceClearExam() {
+    if (exam && exam.pickedEl) exam.pickedEl.classList.remove('exam-pick');
+    exam = null;
+    document.body.classList.remove('exam-active');
+    hideExamUI();
+  }
+  // Leave the exam and restore clean practice chrome (Explore).
+  function exitExam() {
+    forceClearExam();
+    setMode('explore');
+    syncTabUI();
+  }
+  const examInProgress = () => !!exam;
+
+  function handleMapCaptureTap(e) {
+    if (exam && exam.phase === 'running') { handleExamTap(e); return; }
+    handleBlockTap(e);
+  }
+
+  return { setDistrict, enterExam, exitExam, examInProgress };
 }

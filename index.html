@@ -45,6 +45,7 @@
         <div class="maps-menu" id="mapsMenu" style="display:none;">
           <button class="menu-item" id="newDistrictBtn">＋ Add map</button>
           <button class="menu-item" id="editDistrictBtn">✎ Edit</button>
+          <button class="menu-item" id="examModeBtn">🎓 Exam mode</button>
           <button class="menu-item" id="deleteDistrictBtn" style="display:none;">🗑 Delete</button>
           <button class="menu-item" id="exportAllBtn">⤓ Export all</button>
           <label class="menu-item" id="importAllBtn">⤒ Import<input id="importAllInput" type="file" accept="application/json,.json" hidden></label>
@@ -74,6 +75,42 @@
       <span><i class="swatch target"></i>Asked street</span>
       <span><i class="swatch green"></i>Correct</span>
       <span><i class="swatch red"></i>Wrong</span>
+    </div>
+  </div>
+
+  <!-- Certification exam: setup card, running chrome, results card (hidden until launched). -->
+  <div class="exam-overlay" id="examSetup" style="display:none;">
+    <div class="exam-card">
+      <h2>🎓 Certification Exam</h2>
+      <p class="exam-sub" id="examSetupDistrict"></p>
+      <label class="exam-field">Examinee name<input id="examName" type="text" autocomplete="off" autocapitalize="words"></label>
+      <label class="exam-field">Badge / ID<input id="examBadge" type="text" autocomplete="off"></label>
+      <div class="exam-field">Coverage<div class="mode-tabs" id="examCoverage"></div></div>
+      <label class="exam-field">Pass threshold (%)<input id="examPass" type="number" min="1" max="100" value="90"></label>
+      <div class="exam-actions">
+        <button class="btn primary" id="examStart" disabled>Start exam</button>
+        <button class="btn" id="examCancel">Cancel</button>
+      </div>
+      <p class="exam-note">Proctored: the map locks to this district and gives no feedback until the exam ends.</p>
+    </div>
+  </div>
+
+  <div class="exam-bar" id="examBar" style="display:none;">
+    <span class="exam-progress" id="examProgress"></span>
+    <span class="exam-locate" id="examLocate"></span>
+  </div>
+  <div class="exam-panel" id="examPanel" style="display:none;">
+    <button class="btn primary" id="examSubmit" disabled>Submit answer</button>
+    <button class="btn" id="examDontKnow">Don't know</button>
+    <span style="flex:1"></span>
+    <button class="btn" id="examEnd">End exam</button>
+  </div>
+
+  <div class="exam-overlay" id="examResults" style="display:none;">
+    <div class="exam-card">
+      <h2 id="examResultTitle">Result</h2>
+      <div id="examResultBody"></div>
+      <div class="exam-actions"><button class="btn primary" id="examDone">Done</button></div>
     </div>
   </div>
 </div>
