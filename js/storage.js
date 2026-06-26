@@ -109,6 +109,10 @@ export function saveRenames(districtId, map) {
   else delete all[districtId];
   writeKey(RENAMES_KEY, all);
 }
+// Every district's overrides, for backup. { districtId: { orig: new } }.
+export function loadAllRenames() {
+  return readKey(RENAMES_KEY, {});
+}
 
 // User-created districts: a map keyed by id. Each value is a full district
 // record { id, name, viewBox, streets, excluded, confusionGroups, svgMarkup,
@@ -138,19 +142,35 @@ export function saveSelectedDistrict(id) {
   writeKey(SELECTED_KEY, id);
 }
 
-// All user-created districts serialized as one JSON string (for a backup /
-// hand-off file that can be re-imported or committed to the repo).
+// A full local backup: user-created districts AND street-name overrides (the
+// latter so corrections to built-in maps aren't lost on an "Export all").
 export function exportDistrictsBundle() {
-  return JSON.stringify(loadUserDistricts(), null, 2);
+  return JSON.stringify({ districts: loadUserDistricts(), renames: loadAllRenames() }, null, 2);
 }
 
-// Merge a bundle (map of id -> district record) back into the store.
+// Merge a backup into the store. Accepts the current wrapped shape
+// { districts, renames } and the legacy flat map of id -> record.
+// Returns { districts, renames, firstId } (counts + first imported district id).
 export function importDistrictsBundle(bundle) {
+  bundle = bundle || {};
+  const wrapped = bundle.districts && typeof bundle.districts === 'object' && !bundle.districts.id;
+  const districts = wrapped ? bundle.districts : bundle;
+  const renames = (wrapped && bundle.renames && typeof bundle.renames === 'object') ? bundle.renames : null;
+
   const all = loadUserDistricts();
-  let n = 0;
-  for (const [id, rec] of Object.entries(bundle || {})) {
-    if (rec && rec.id) { all[id] = rec; n++; }
+  let d = 0, firstId = null;
+  for (const [id, rec] of Object.entries(districts)) {
+    if (rec && rec.id) { all[id] = rec; if (!firstId) firstId = id; d++; }
   }
   writeKey(DISTRICTS_KEY, all);
-  return n;
+
+  let r = 0;
+  if (renames) {
+    const allR = readKey(RENAMES_KEY, {});
+    for (const [id, map] of Object.entries(renames)) {
+      if (map && typeof map === 'object' && Object.keys(map).length) { allR[id] = map; r++; }
+    }
+    writeKey(RENAMES_KEY, allR);
+  }
+  return { districts: d, renames: r, firstId };
 }

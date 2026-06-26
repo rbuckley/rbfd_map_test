@@ -352,11 +352,12 @@ async function main() {
     // User districts edit in place; built-ins open as an editable duplicate.
     openBuilder({ existing: currentDistrict, editable: currentSource === 'user', onSaved: id => switchDistrict(id) });
   });
-  // Export every created district as one .json (backup / hand-off / commit).
+  // Back up everything in this browser: created districts + street-name edits.
   document.getElementById('exportAllBtn').addEventListener('click', () => {
     const json = exportDistrictsBundle();
-    if (Object.keys(JSON.parse(json)).length === 0) {
-      window.alert('No created districts to export yet. Make one with “＋ District” first.');
+    const data = JSON.parse(json);
+    if (Object.keys(data.districts || {}).length === 0 && Object.keys(data.renames || {}).length === 0) {
+      window.alert('Nothing to back up yet — add a map (＋ Add map) or edit some street names first.\n\nTo export one built-in map as committable files, use “⤓ Export this map”.');
       return;
     }
     const a = document.createElement('a');
@@ -373,10 +374,12 @@ async function main() {
     reader.onload = () => {
       try {
         const bundle = JSON.parse(reader.result);
-        const n = importDistrictsBundle(bundle);
-        window.alert(`Imported ${n} district(s).`);
-        const firstId = Object.keys(bundle)[0];
-        if (firstId) switchDistrict(firstId); else renderPicker(currentDistrict && currentDistrict.id);
+        const res = importDistrictsBundle(bundle);
+        window.alert(`Imported ${res.districts} district(s)` +
+          (res.renames ? ` and name edits for ${res.renames} map(s)` : '') + '.');
+        // Switch to a freshly imported district, or re-load the current one so
+        // imported name edits for a built-in apply right away.
+        switchDistrict(res.firstId || (currentDistrict ? currentDistrict.id : DEFAULT_DISTRICT));
       } catch (err) {
         window.alert('Could not read that file: ' + err.message);
       }
