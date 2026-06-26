@@ -56,7 +56,6 @@
     "Central Court",
     "Yacht Club Way",
     "Serpentine Street",
-    "F Avenue South",
     "South Helberta Avenue",
     "South Guadalupe Avenue",
     "Sierra Vista Drive",
@@ -78,7 +77,7 @@
     "Herondo Street",
     "Sea Hawk Way",
     "North Prospect Avenue",
-    "South Camino Real",
+    "Camino Real",
     "Sapphire Street",
     "South Broadway",
     "Vista del Mar",
@@ -86,7 +85,7 @@
     "Ynez Avenue",
     "South Pacific Coast Highway",
     "North Catalina Avenue",
-    "Paseo D Las Delicias Avenue",
+    "Paseo De Las Delicias Avenue",
     "Pearl Street",
     "Ruby Street",
     "Rita Street",
@@ -96,7 +95,7 @@
     "South Lucia Avenue",
     "South Prospect Avenue",
     "Del Amo Boulevard",
-    "Pacific Coast Highway",
+    "North Pacific Coast Highway",
     "Beryl Street",
     "Linda Drive",
     "South Elena Avenue",
@@ -115,7 +114,7 @@
   "excluded": [],
   "confusionGroups": {},
   "blocks": {
-    "Pacific Coast Highway": [
+    "North Pacific Coast Highway": [
       {
         "block": 100,
         "x": -13178643.3,
@@ -124,15 +123,15 @@
       },
       {
         "block": 200,
-        "x": -13178578.2,
-        "y": -4007285.1,
-        "count": 2
+        "x": -13178660.6,
+        "y": -4007502.4,
+        "count": 3
       },
       {
         "block": 300,
-        "x": -13178710.9,
-        "y": -4007447.4,
-        "count": 11
+        "x": -13178717.5,
+        "y": -4007497.8,
+        "count": 12
       },
       {
         "block": 400,
@@ -142,21 +141,21 @@
       },
       {
         "block": 500,
-        "x": -13178986.3,
-        "y": -4008530.4,
-        "count": 10
+        "x": -13178996.2,
+        "y": -4008557.8,
+        "count": 11
       },
       {
         "block": 600,
-        "x": -13178904.4,
-        "y": -4008028.5,
-        "count": 9
+        "x": -13178930.8,
+        "y": -4008185.3,
+        "count": 11
       },
       {
         "block": 700,
-        "x": -13178807,
-        "y": -4007181.7,
-        "count": 18
+        "x": -13178822.2,
+        "y": -4007277.9,
+        "count": 19
       },
       {
         "block": 800,
@@ -659,38 +658,6 @@
         "count": 1
       }
     ],
-    "North Pacific Coast Highway": [
-      {
-        "block": 200,
-        "x": -13178825.5,
-        "y": -4007937,
-        "count": 1
-      },
-      {
-        "block": 300,
-        "x": -13178790.5,
-        "y": -4008052.6,
-        "count": 1
-      },
-      {
-        "block": 500,
-        "x": -13179095.7,
-        "y": -4008831.8,
-        "count": 1
-      },
-      {
-        "block": 600,
-        "x": -13179049.7,
-        "y": -4008890.7,
-        "count": 2
-      },
-      {
-        "block": 700,
-        "x": -13179096.1,
-        "y": -4009009.2,
-        "count": 1
-      }
-    ],
     "North Prospect Avenue": [
       {
         "block": 400,
@@ -767,7 +734,7 @@
         "count": 1
       }
     ],
-    "South Camino Real": [
+    "Camino Real": [
       {
         "block": 1100,
         "x": -13177375.3,
