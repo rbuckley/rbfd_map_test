@@ -89,6 +89,10 @@ export async function bootApp(opts = {}) {
 
 // --- interaction helpers ---
 export const wait = ms => new Promise(r => setTimeout(r, ms));
+// Section navigation (Study | Edit | Exam). `$` is the query helper from bootApp.
+export const goSection = ($, name) => click($(`#sectionTabs [data-section="${name}"]`));
+export const goStudy = ($, mode) => { goSection($, 'study'); if (mode) click($(`#studyTabs [data-mode="${mode}"]`)); };
+export const goEdit = ($, scope) => { goSection($, 'edit'); if (scope) click($(`#editScopeTabs [data-scope="${scope}"]`)); };
 export const click = el => el.dispatchEvent(new el.ownerDocument.defaultView.MouseEvent('click', { bubbles: true }));
 export const tapAt = (el, clientX, clientY) => el.dispatchEvent(new el.ownerDocument.defaultView.MouseEvent('click', { bubbles: true, clientX, clientY }));
 export const change = (el, v) => { el.value = v; el.dispatchEvent(new el.ownerDocument.defaultView.Event('change')); };

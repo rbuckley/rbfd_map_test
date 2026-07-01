@@ -1,31 +1,32 @@
-import { bootApp, district, ok, section, done, click } from './harness.mjs';
+import { bootApp, district, ok, section, done, click, goStudy, goEdit } from './harness.mjs';
 
 const streets = ['Alpha St', 'Bravo Ave', 'Carter Rd'];
 const { $ } = await bootApp({ districts: { u1: district({ streets }) }, selected: 'u1' });
 const g = n => $(`.street[data-name="${n}"]`);
 const hi = n => g(n).classList.contains('hover');
 
-section('tapped street stays highlighted (no 1.2s fade)');
+section('Study/Explore: tapped street stays highlighted (no 1.2s fade), no edit row');
 click(g('Alpha St'));
 ok(hi('Alpha St'), 'Alpha highlighted on tap');
-ok($('#renameRow').style.display === 'flex', 'inline row open');
+ok($('#renameRow').style.display === 'none', 'no edit row in Study');
 
 section('tapping another street moves the highlight');
 click(g('Bravo Ave'));
 ok(hi('Bravo Ave') && !hi('Alpha St'), 'only one street highlighted at a time');
 
-section('Cancel clears the highlight');
-click($('#renameCancel'));
-ok(!hi('Bravo Ave'), 'highlight cleared on Cancel');
+section('switching Study sub-mode clears the selection');
+goStudy($, 'test');
+ok(!hi('Bravo Ave'), 'highlight cleared when leaving Explore');
+goStudy($, 'explore');
 
-section('switching modes clears any selection');
+section('Edit: Cancel clears the highlight');
+goEdit($, 'streets');
 click(g('Carter Rd'));
-ok(hi('Carter Rd'), 'Carter highlighted');
-click($('#modeTabs [data-mode="test"]'));
-ok(!hi('Carter Rd'), 'highlight cleared when leaving Explore');
+ok(hi('Carter Rd') && $('#renameRow').style.display === 'flex', 'Edit tap highlights + opens row');
+click($('#renameCancel'));
+ok(!hi('Carter Rd'), 'highlight cleared on Cancel');
 
 section('renaming the selected street leaves no orphaned highlight');
-click($('#modeTabs [data-mode="explore"]'));
 click(g('Alpha St'));
 ok(hi('Alpha St'), 'Alpha highlighted before rename');
 $('#renameInput').value = 'Alpha Street';

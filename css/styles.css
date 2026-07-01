@@ -91,6 +91,27 @@ body {
   white-space: nowrap;
 }
 .mode-tab.active { background: var(--accent2); color: white; }
+
+/* --- Top-level section switch (Study | Edit | Exam) --- */
+.section-tabs { background: #08111c; border: 1px solid #24405f; }
+.section-tabs .mode-tab { min-width: 74px; font-size: 13px; padding: 7px 12px; }
+.section-tabs .mode-tab.active { background: var(--accent); color: #10202f; }
+.section-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+/* Edit-mode accent: recolor the section switch + banner so it's unmistakable. */
+body.edit-active .section-tabs .mode-tab.active { background: #d98a3d; }
+body.edit-active .header { border-bottom-color: #d98a3d; }
+.edit-banner {
+  width: 100%; font-size: 12px; color: #ffd9b0;
+  background: rgba(217,138,61,0.14); border: 1px solid rgba(217,138,61,0.5);
+  border-radius: 6px; padding: 5px 9px;
+}
+.edit-banner b { color: #ffb877; }
+.edit-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.edit-placeholder {
+  font-size: 12px; color: var(--dim); background: var(--panel);
+  border: 1px dashed #2d4a6f; border-radius: 8px; padding: 14px; margin-top: 6px;
+}
+
 .map-wrap {
   flex: 1 1 0;
   min-height: 0;     /* critical: lets the flex item shrink so .bottom stays visible */

@@ -15,6 +15,7 @@ export function createQuiz({ dom }) {
   let persist = () => {};
   let onSelect = null;           // notified when a street is tapped in Explore
   let onRotate = null;           // notified (new angle) when the map is rotated
+  let onExamExit = null;         // notified when the exam is left (back to Study)
   let STREET_NAMES = [];
   let confusionGroupList = [];   // array of name-arrays (any number of groups)
   let defaultExcluded = new Set();
@@ -68,6 +69,7 @@ export function createQuiz({ dom }) {
     persist = opts.persist;
     onSelect = opts.onSelect || null;
     onRotate = opts.onRotate || null;
+    onExamExit = opts.onExamExit || null;
     const initial = opts.initial || {};
 
     STREET_NAMES = district.streets;
@@ -628,18 +630,6 @@ export function createQuiz({ dom }) {
     return isExcluded(name);
   }
 
-  function excludeCurrent() {
-    if (!target) return;
-    const name = target;
-    userExcluded.add(name);
-    streetEls[name] && streetEls[name].classList.remove('target', 'correct', 'wrong', 'retry-highlight');
-    showFeedback(`Excluded: ${name}`, 'info');
-    target = null;
-    renderExclusionManager();
-    save();
-    setTimeout(advance, 600);
-  }
-
   // --- Wire up DOM controls ---
   dom.modeTabs.forEach(t => {
     t.addEventListener('click', () => {
@@ -680,7 +670,6 @@ export function createQuiz({ dom }) {
   });
   dom.submitAns.addEventListener('click', submitAnswer);
   dom.skip.addEventListener('click', skipCurrent);
-  dom.excludeBtn.addEventListener('click', excludeCurrent);
   dom.textbox.addEventListener('keydown', e => {
     if (e.key === 'Enter') submitAnswer();
   });
@@ -763,7 +752,10 @@ export function createQuiz({ dom }) {
     const pool = shuffle(active.slice()).slice(0, count);
     exam = {
       phase: 'running', examinee: { name, badge }, districtId: exam.districtId, passPct: pass,
-      questions: pool.map(s => ({ target: s, answer: null, correct: false })),
+      // Target-type-agnostic question shape. Streets score by name match today
+      // (the `.street` tap already yields a name); a future 'block' type would
+      // set type:'block' + a proximity hitTest, reusing the same run/lockdown.
+      questions: pool.map(s => ({ type: 'street', target: s, prompt: `Locate: ${s}`, answer: null, correct: false })),
       index: 0, startTime: Date.now(), endTime: 0, pickedEl: null, pickedName: null,
     };
     u.setup.style.display = 'none';
@@ -780,7 +772,7 @@ export function createQuiz({ dom }) {
     if (exam.pickedEl) exam.pickedEl.classList.remove('exam-pick');
     exam.pickedEl = null; exam.pickedName = null;
     u.progress.textContent = `Question ${exam.index + 1} of ${exam.questions.length}`;
-    u.locate.textContent = `Locate: ${q.target}`;
+    u.locate.textContent = q.prompt || `Locate: ${q.target}`;
     u.submit.disabled = true;
   }
 
@@ -853,6 +845,7 @@ export function createQuiz({ dom }) {
     forceClearExam();
     setMode('explore');
     syncTabUI();
+    if (onExamExit) onExamExit();
   }
   const examInProgress = () => !!exam;
 
@@ -899,5 +892,5 @@ export function createQuiz({ dom }) {
     if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
   }
 
-  return { setDistrict, enterExam, exitExam, examInProgress, applyRename, toggleExclude, isExcluded, clearExploreSelection };
+  return { setDistrict, setMode, enterExam, exitExam, examInProgress, applyRename, toggleExclude, isExcluded, clearExploreSelection };
 }

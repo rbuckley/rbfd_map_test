@@ -3,7 +3,7 @@ import { bootApp, district, ok, section, done, click, change, input, wait } from
 const streets = ['Alpha St', 'Bravo Ave', 'Carter Rd', 'Delta Way'];
 const { $, $$ } = await bootApp({ districts: { u1: district({ streets }) }, selected: 'u1' });
 
-const modeTab = m => $(`#modeTabs [data-mode="${m}"]`);
+const modeTab = m => $(`#studyTabs [data-mode="${m}"]`);   // Study sub-tabs
 const targetName = () => ($('#map .street.target') || {}).dataset?.name;
 
 section('Explore: tapping a street reveals its name');

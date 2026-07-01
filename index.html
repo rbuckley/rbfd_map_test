@@ -14,74 +14,102 @@
     <div class="title" id="districtTitle"><h1>RBFD Map Test - District 1</h1></div>
     <div class="score">Score: <b id="score">0/0</b> (<span id="pct">--</span>)</div>
     <div class="controls">
-      <div class="mode-tabs" id="modeTabs">
-        <button class="mode-tab active" data-mode="explore">Explore</button>
-        <button class="mode-tab" data-mode="test">Test</button>
-        <button class="mode-tab" data-mode="blocks">Blocks</button>
+      <!-- Primary nav: three top-level modes -->
+      <div class="mode-tabs section-tabs" id="sectionTabs">
+        <button class="mode-tab active" data-section="study">📖 Study</button>
+        <button class="mode-tab" data-section="edit">✎ Edit</button>
+        <button class="mode-tab" data-section="exam">🎓 Exam</button>
       </div>
-      <div class="test-toggles" id="testToggles" style="display:none;">
-        <div class="mode-tabs" id="selectionTabs">
-          <button class="mode-tab active" data-selection="random">Random</button>
-          <button class="mode-tab" data-selection="click">Click</button>
+
+      <!-- STUDY: explore / test / blocks -->
+      <div class="section-controls" id="studyControls">
+        <div class="mode-tabs" id="studyTabs">
+          <button class="mode-tab active" data-mode="explore">Explore</button>
+          <button class="mode-tab" data-mode="test">Test</button>
+          <button class="mode-tab" data-mode="blocks">Blocks</button>
         </div>
-        <div class="mode-tabs" id="answerTabs">
-          <button class="mode-tab active" data-answer="dropdown">Dropdown</button>
-          <button class="mode-tab" data-answer="type">Type</button>
+        <div class="test-toggles" id="testToggles" style="display:none;">
+          <div class="mode-tabs" id="selectionTabs">
+            <button class="mode-tab active" data-selection="random">Random</button>
+            <button class="mode-tab" data-selection="click">Click</button>
+          </div>
+          <div class="mode-tabs" id="answerTabs">
+            <button class="mode-tab active" data-answer="dropdown">Dropdown</button>
+            <button class="mode-tab" data-answer="type">Type</button>
+          </div>
+        </div>
+        <div class="test-toggles" id="blocksToggles" style="display:none;">
+          <div class="mode-tabs" id="blockStyleTabs">
+            <button class="mode-tab active" data-blockstyle="locate">Locate</button>
+            <button class="mode-tab" data-blockstyle="identify">Identify</button>
+          </div>
+        </div>
+        <button class="btn primary" id="newQ">New</button>
+        <button class="btn" id="reveal">Reveal</button>
+        <button class="btn" id="missed">Retry Missed</button>
+      </div>
+
+      <!-- EDIT: scope (streets | blocks) + map/library tools -->
+      <div class="section-controls" id="editControls" style="display:none;">
+        <div class="mode-tabs" id="editScopeTabs">
+          <button class="mode-tab active" data-scope="streets">Streets</button>
+          <button class="mode-tab" data-scope="blocks">Blocks</button>
+        </div>
+        <button class="btn" id="rotateBtn">⟳ Rotate</button>
+        <div class="maps-menu-wrap">
+          <button class="btn" id="mapsMenuBtn">🗺 Map ▾</button>
+          <div class="maps-menu" id="mapsMenu" style="display:none;">
+            <button class="menu-item" id="newDistrictBtn">＋ Add map</button>
+            <button class="menu-item" id="editDistrictBtn">✎ Edit in builder</button>
+            <button class="menu-item" id="deleteDistrictBtn" style="display:none;">🗑 Delete</button>
+            <button class="menu-item" id="exportMapBtn">⤓ Export this map</button>
+            <button class="menu-item" id="exportAllBtn">⤓ Export all</button>
+            <label class="menu-item" id="importAllBtn">⤒ Import<input id="importAllInput" type="file" accept="application/json,.json" hidden></label>
+          </div>
         </div>
       </div>
-      <div class="test-toggles" id="blocksToggles" style="display:none;">
-        <div class="mode-tabs" id="blockStyleTabs">
-          <button class="mode-tab active" data-blockstyle="locate">Locate</button>
-          <button class="mode-tab" data-blockstyle="identify">Identify</button>
-        </div>
-      </div>
-      <button class="btn primary" id="newQ">New</button>
-      <button class="btn" id="reveal">Reveal</button>
-      <button class="btn" id="missed">Retry Missed</button>
+
       <button class="btn" id="resetView">Reset Zoom</button>
-      <button class="btn" id="rotateBtn">⟳ Rotate</button>
-      <div class="maps-menu-wrap">
-        <button class="btn" id="mapsMenuBtn">🗺 Maps ▾</button>
-        <div class="maps-menu" id="mapsMenu" style="display:none;">
-          <button class="menu-item" id="newDistrictBtn">＋ Add map</button>
-          <button class="menu-item" id="editDistrictBtn">✎ Edit</button>
-          <button class="menu-item" id="examModeBtn">🎓 Exam mode</button>
-          <button class="menu-item" id="deleteDistrictBtn" style="display:none;">🗑 Delete</button>
-          <button class="menu-item" id="exportMapBtn">⤓ Export this map</button>
-          <button class="menu-item" id="exportAllBtn">⤓ Export all</button>
-          <label class="menu-item" id="importAllBtn">⤒ Import<input id="importAllInput" type="file" accept="application/json,.json" hidden></label>
-        </div>
-      </div>
     </div>
   </div>
   <div class="map-wrap">
     <div style="padding:24px;color:var(--dim)">Loading map…</div>
   </div>
   <div class="bottom">
+    <div class="edit-banner" id="editBanner" style="display:none;">✎ <b>Editing this map</b> — changes here can be exported to update it for everyone.</div>
     <div class="prompt" id="prompt">Tap a street to see its name. Pinch or scroll to zoom. Drag to pan.</div>
     <div class="input-row" id="inputRow" style="display:none;">
       <select id="dropdown" style="display:none;"></select>
       <input id="textbox" type="text" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="Type the street name" style="display:none;"/>
       <button class="btn primary" id="submitAns">Check</button>
       <button class="btn" id="skip">Skip</button>
-      <button id="excludeBtn">Exclude</button>
     </div>
     <div class="feedback" id="feedback"></div>
-    <div class="rename-row" id="renameRow" style="display:none;">
-      <span class="rename-label" id="renameLabel">Rename</span>
-      <input id="renameInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="Corrected street name"/>
-      <button class="btn primary" id="renameSave">Save</button>
-      <button class="btn" id="mergeWithBtn">Merge with…</button>
-      <button class="btn" id="unmergeBtn" style="display:none;">Unmerge</button>
-      <button class="btn" id="excludeToggleBtn" title="Exclude this street from quizzes and exams">Exclude</button>
-      <button class="btn" id="renameCancel">Cancel</button>
+
+    <!-- EDIT · Streets scope -->
+    <div id="editStreetsSurface" style="display:none;">
+      <div class="rename-row" id="renameRow" style="display:none;">
+        <span class="rename-label" id="renameLabel">Rename</span>
+        <input id="renameInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="Corrected street name"/>
+        <button class="btn primary" id="renameSave">Save</button>
+        <button class="btn" id="mergeWithBtn">Merge with…</button>
+        <button class="btn" id="unmergeBtn" style="display:none;">Unmerge</button>
+        <button class="btn" id="excludeToggleBtn" title="Exclude this street from quizzes and exams">Exclude</button>
+        <button class="btn" id="renameCancel">Cancel</button>
+      </div>
+      <div class="edit-tools">
+        <button id="exclusionToggle">Manage Exclusions (0)</button>
+        <button id="renameToggle">✎ Edit street names</button>
+      </div>
+      <div id="exclusionManager"></div>
+      <div id="renameManager"></div>
     </div>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-      <button id="exclusionToggle">Manage Exclusions (0)</button>
-      <button id="renameToggle">✎ Edit street names</button>
+
+    <!-- EDIT · Blocks scope (reserved seam) -->
+    <div id="editBlocksSurface" style="display:none;">
+      <div class="edit-placeholder">Block editing — coming soon. Blocks will be editable here (reposition, reassign, exclude, merge) just like streets.</div>
     </div>
-    <div id="exclusionManager"></div>
-    <div id="renameManager"></div>
+
     <div class="legend">
       <span><i class="swatch"></i>Street</span>
       <span><i class="swatch target"></i>Asked street</span>

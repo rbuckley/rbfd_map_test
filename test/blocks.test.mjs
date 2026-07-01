@@ -19,7 +19,7 @@ const blocks = rec.blocks;
 const findCoord = (street, block) => blocks[street].find(b => b.block === block);
 
 section('Blocks / Locate');
-click($('#modeTabs [data-mode="blocks"]'));
+click($('#studyTabs [data-mode="blocks"]'));
 ok($('#blocksToggles').style.display === 'flex' && $('#newQ').style.display !== 'none', 'blocks toggles + New shown');
 click($('#newQ'));
 let m = $('#prompt').textContent.match(/Tap the (\d+) block of (.+)\./);

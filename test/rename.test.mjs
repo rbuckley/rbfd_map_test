@@ -1,4 +1,4 @@
-import { bootApp, district, ok, section, done, click, change, svgMarkup } from './harness.mjs';
+import { bootApp, district, ok, section, done, click, change, goEdit } from './harness.mjs';
 
 const streets = ['Alpha St', 'Bravo Ave', 'S Pacific Coast Hwy', 'Pacific Coast Hwy'];
 const rec = district({
@@ -12,7 +12,10 @@ const { window, $, $$, ls } = await bootApp({ districts: { u1: rec }, selected: 
 const names = () => $$('#map .street').map(g => g.getAttribute('data-name'));
 const rowInput = v => $$('#renameManager .rename-item input[type="text"]').find(i => i.value === v);
 
-section('inline rename from Explore');
+goEdit($, 'streets');   // editing lives in the Edit section now
+
+section('Edit · Streets: inline rename on tap');
+ok($('body').classList.contains('edit-active'), 'edit chrome active');
 click($('.street[data-name="Alpha St"]'));
 ok($('#renameRow').style.display === 'flex' && $('#renameInput').value === 'Alpha St', 'row appears, prefilled');
 change($('#renameInput'), 'Alpha Street');

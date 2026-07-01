@@ -1,4 +1,4 @@
-import { bootApp, district, ok, section, done, click, input } from './harness.mjs';
+import { bootApp, district, ok, section, done, click, input, goSection } from './harness.mjs';
 
 // 30 streets so the "25" preset shows and "50" is hidden.
 const streets = Array.from({ length: 30 }, (_, i) => 'Street ' + (i + 1));
@@ -13,7 +13,7 @@ const curTarget = () => $('#examLocate').textContent.replace(/^Locate:\s*/, '');
 
 section('setup gating + preset clamping');
 ok($('#score').textContent === '7/9', 'seeded practice score');
-click($('#examModeBtn'));
+goSection($, "exam");
 ok($('#examSetup').style.display === 'flex' && $('#examStart').disabled, 'setup shown, Start disabled');
 setVal($('#examName'), 'Jane'); setVal($('#examBadge'), 'FF-1');
 ok(!$('#examStart').disabled, 'Start enabled after name + badge');
@@ -48,7 +48,7 @@ click($('#examDone'));
 ok(!$('body').classList.contains('exam-active') && $('#score').textContent === '7/9', 'exam closed, practice score intact');
 
 section('end-early counts the rest as missed');
-click($('#examModeBtn')); setVal($('#examName'), 'A'); setVal($('#examBadge'), 'B');
+goSection($, "exam"); setVal($('#examName'), 'A'); setVal($('#examBadge'), 'B');
 $$('#examCoverage .mode-tab').find(b => /25 questions/.test(b.textContent)).click();
 click($('#examStart'));
 click($('#examEnd'));

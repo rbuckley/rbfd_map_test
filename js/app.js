@@ -20,7 +20,6 @@ function gatherDom() {
     inputRow: $('inputRow'),
     submitAns: $('submitAns'),
     skip: $('skip'),
-    excludeBtn: $('excludeBtn'),
     exclusionToggle: $('exclusionToggle'),
     exclusionManager: $('exclusionManager'),
     newQ: $('newQ'),
@@ -29,7 +28,7 @@ function gatherDom() {
     resetView: $('resetView'),
     rotate: $('rotateBtn'),
     testToggles: $('testToggles'),
-    modeTabs: Array.from(document.querySelectorAll('#modeTabs .mode-tab')),
+    modeTabs: Array.from(document.querySelectorAll('#studyTabs .mode-tab')),
     selectionTabs: Array.from(document.querySelectorAll('#selectionTabs .mode-tab')),
     answerTabs: Array.from(document.querySelectorAll('#answerTabs .mode-tab')),
     blocksToggles: document.getElementById('blocksToggles'),
@@ -88,12 +87,16 @@ async function main() {
       persist: state => saveProgress(id, state),
       onSelect: onExploreSelect,
       onRotate: angle => { currentRotation = angle; saveRotation(id, angle); },
+      onExamExit: () => setSection('study'),
     });
     hideRenameRow();
     if (renameManager.classList.contains('open')) renderRenameManager();
     renderPicker(id);
     // Only user-created districts can be deleted.
     document.getElementById('deleteDistrictBtn').style.display = currentSource === 'user' ? '' : 'none';
+    // Re-apply the current section's chrome for the (possibly new) district.
+    applySectionChrome();
+    if (section === 'edit') applyEditScope();
   }
   function rerenderCurrent() { if (currentOriginal) renderDistrict(); }
 
@@ -116,6 +119,85 @@ async function main() {
     container.innerHTML = '';
     container.appendChild(sel);
   }
+
+  // --- Top-level sections: Study | Edit | Exam ---
+  const sectionTabs = Array.from(document.querySelectorAll('#sectionTabs .mode-tab'));
+  const editScopeTabs = Array.from(document.querySelectorAll('#editScopeTabs .mode-tab'));
+  const studyControlsEl = document.getElementById('studyControls');
+  const editControlsEl = document.getElementById('editControls');
+  const editBannerEl = document.getElementById('editBanner');
+  const editStreetsSurface = document.getElementById('editStreetsSurface');
+  const editBlocksSurface = document.getElementById('editBlocksSurface');
+  const scoreEl = document.querySelector('.score');
+  let section = 'study';        // 'study' | 'edit' | 'exam'
+  let studyMode = 'explore';    // quiz sub-mode within Study
+  let editScope = 'streets';    // 'streets' | 'blocks'
+
+  // Editable-entity registry. Streets are implemented; blocks is a reserved
+  // placeholder so block editing later is additive, not a rewrite. Edit's tap,
+  // surfaces, and (future) export dispatch through the active entity — nothing
+  // in the section machinery is street-specific.
+  const entities = {
+    streets: {
+      id: 'streets',
+      available: () => true,
+      onTap: name => openStreetEdit(name),
+      showSurface: on => { editStreetsSurface.style.display = on ? '' : 'none'; },
+      prompt: 'Tap a street to rename, merge, or exclude it.',
+    },
+    blocks: {
+      id: 'blocks',
+      available: () => !!(currentDistrict && Object.keys(currentDistrict.blocks || {}).length),
+      onTap: () => {},   // placeholder until block editing lands
+      showSurface: on => { editBlocksSurface.style.display = on ? '' : 'none'; },
+      prompt: 'Block editing is coming soon.',
+    },
+  };
+
+  const setPrompt = text => { document.getElementById('prompt').textContent = text; };
+
+  function applySectionChrome() {
+    sectionTabs.forEach(t => t.classList.toggle('active', t.dataset.section === section));
+    document.body.classList.toggle('edit-active', section === 'edit');
+    studyControlsEl.style.display = section === 'study' ? '' : 'none';
+    editControlsEl.style.display = section === 'edit' ? '' : 'none';
+    editBannerEl.style.display = section === 'edit' ? '' : 'none';
+    if (scoreEl) scoreEl.style.display = section === 'study' ? '' : 'none';
+    document.getElementById('mapsMenu').style.display = 'none';
+    if (section !== 'edit') { editStreetsSurface.style.display = 'none'; editBlocksSurface.style.display = 'none'; }
+  }
+
+  function applyEditScope() {
+    for (const t of editScopeTabs) {
+      const ent = entities[t.dataset.scope];
+      t.style.display = (ent && ent.available()) ? '' : 'none';   // hide scopes with no data
+    }
+    if (!entities[editScope] || !entities[editScope].available()) editScope = 'streets';
+    editScopeTabs.forEach(t => t.classList.toggle('active', t.dataset.scope === editScope));
+    hideRenameRow();
+    for (const id of Object.keys(entities)) entities[id].showSurface(id === editScope);
+    setPrompt(entities[editScope].prompt);
+  }
+  function setEditScope(scope) {
+    if (!entities[scope] || !entities[scope].available()) return;
+    editScope = scope;
+    applyEditScope();
+  }
+
+  function setSection(sec) {
+    if (quiz.examInProgress() && sec !== 'exam') return;   // can't leave a running exam via tabs
+    section = sec;
+    hideRenameRow();
+    applySectionChrome();
+    if (sec === 'study') quiz.setMode(studyMode);
+    else if (sec === 'edit') { quiz.setMode('explore'); applyEditScope(); }   // tap-to-select
+    else if (sec === 'exam') quiz.enterExam(currentDistrictId);
+  }
+
+  sectionTabs.forEach(t => t.addEventListener('click', () => setSection(t.dataset.section)));
+  editScopeTabs.forEach(t => t.addEventListener('click', () => setEditScope(t.dataset.scope)));
+  // Remember the Study sub-mode so returning to Study restores it.
+  document.querySelectorAll('#studyTabs .mode-tab').forEach(t => t.addEventListener('click', () => { studyMode = t.dataset.mode; }));
 
   // Maps menu (Add map / Edit / Delete / Export / Import) open-close.
   const mapsBtn = document.getElementById('mapsMenuBtn');
@@ -150,9 +232,17 @@ async function main() {
     renameInput.style.display = ''; renameSave.style.display = ''; mergeWithBtn.style.display = ''; excludeToggleBtn.style.display = '';
     quiz.clearExploreSelection();
   }
-  // Tapping a street in Explore: either complete an armed merge, or offer the
-  // inline rename / merge / unmerge controls for that street.
+  // A street tap from the quiz. In Study it's a no-op here (the quiz already
+  // revealed + highlighted); editing only happens in the Edit section, routed
+  // through the active entity so blocks can hook in the same way later.
   function onExploreSelect(name) {
+    if (section !== 'edit') return;
+    entities[editScope].onTap(name);
+  }
+
+  // Edit · Streets: open the inline edit panel for a tapped street (or complete
+  // an armed merge).
+  function openStreetEdit(name) {
     if (pendingMergeFrom) {
       const first = pendingMergeFrom;
       hideRenameRow();
@@ -253,8 +343,6 @@ async function main() {
     if (e.key === 'Enter') { renameSave.click(); }
     else if (e.key === 'Escape') hideRenameRow();
   });
-  // Leaving Explore dismisses the inline editor.
-  document.querySelectorAll('#modeTabs .mode-tab').forEach(t => t.addEventListener('click', hideRenameRow));
 
   // Bulk editor: a filterable list of every street — rename inline, select 2+
   // to merge, or unmerge/split a merged street back into its sections.
@@ -360,10 +448,7 @@ async function main() {
     ov.querySelector('#chCancel').addEventListener('click', close);
   }
 
-  // Certification exam (proctored). Launches on the current district.
-  document.getElementById('examModeBtn').addEventListener('click', () => {
-    if (currentDistrict) quiz.enterExam(currentDistrict.id);
-  });
+  // (The certification exam is a top-level section, launched from #sectionTabs.)
 
   // Builder entry points.
   document.getElementById('newDistrictBtn').addEventListener('click', chooseNewDistrict);

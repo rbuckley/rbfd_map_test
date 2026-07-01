@@ -8,7 +8,7 @@ section('real D1 loads');
 ok($('#map'), 'map svg rendered');
 ok($('#map .__maprot'), 'rotation group present');
 ok($$('#map .street').length >= 100, `streets rendered (${$$('#map .street').length})`);
-ok($('#modeTabs'), 'header controls present');
+ok($('#sectionTabs') && $('#studyTabs'), 'section + study tabs present');
 
 section('rotation: honors the shipped default and persists a change');
 const angle = () => { const m = ($('#map .__maprot').getAttribute('transform') || '').match(/rotate\((\d+)/); return m ? +m[1] : 0; };

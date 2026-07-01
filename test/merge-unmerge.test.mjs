@@ -1,4 +1,4 @@
-import { bootApp, district, ok, section, done, click } from './harness.mjs';
+import { bootApp, district, ok, section, done, click, goEdit } from './harness.mjs';
 
 const streets = ['Alpha St', 'Bravo Ave', 'S Pacific Coast Hwy', 'Pacific Coast Hwy', 'N Pacific Coast Hwy'];
 const rec = district({
@@ -16,6 +16,8 @@ const rowFor = n => $$('#renameManager .rename-item').find(r => r.querySelector(
 const mergeBtn = () => $('#renameManager .rename-toolbar button');
 const renames = () => ls('renames')?.u1 || {};
 const pch = ['S Pacific Coast Hwy', 'Pacific Coast Hwy', 'N Pacific Coast Hwy'];
+
+goEdit($, 'streets');   // merge/unmerge live in the Edit section
 
 section('bulk list: select 2+ and Merge');
 click($('#renameToggle'));
