@@ -148,6 +148,7 @@ async function main() {
     renameTargetOld = null;
     pendingMergeFrom = null;
     renameInput.style.display = ''; renameSave.style.display = ''; mergeWithBtn.style.display = ''; excludeToggleBtn.style.display = '';
+    quiz.clearExploreSelection();
   }
   // Tapping a street in Explore: either complete an armed merge, or offer the
   // inline rename / merge / unmerge controls for that street.

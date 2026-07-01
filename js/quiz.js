@@ -95,6 +95,7 @@ export function createQuiz({ dom }) {
 
     // Build the street element index from the injected SVG.
     streetEls = {};
+    exploreSelectedEl = null;
     svg.querySelectorAll('.street').forEach(g => {
       streetEls[g.dataset.name] = g;
       g.addEventListener('click', e => {
@@ -203,7 +204,7 @@ export function createQuiz({ dom }) {
     if (exam) return;   // exam taps are handled in capture phase
     if (mode === 'explore') {
       showFeedback(name, 'info');
-      flashHover(name);
+      selectStreet(name);
       if (onSelect) onSelect(name);
       return;
     }
@@ -243,11 +244,17 @@ export function createQuiz({ dom }) {
     presentQuestion(name, 'retry');
   }
 
-  function flashHover(name) {
-    const g = streetEls[name];
-    if (!g) return;
-    g.classList.add('hover');
-    setTimeout(() => g.classList.remove('hover'), 1200);
+  // Explore selection: keep the tapped street highlighted while its inline row
+  // is open. Tracked by element (survives a rename/merge of the street) and
+  // cleared on dismiss (Cancel / mode switch / tapping another street).
+  let exploreSelectedEl = null;
+  function selectStreet(name) {
+    if (exploreSelectedEl) exploreSelectedEl.classList.remove('hover');
+    exploreSelectedEl = streetEls[name] || null;
+    if (exploreSelectedEl) exploreSelectedEl.classList.add('hover');
+  }
+  function clearExploreSelection() {
+    if (exploreSelectedEl) { exploreSelectedEl.classList.remove('hover'); exploreSelectedEl = null; }
   }
 
   // --- Quiz / Test logic ---
@@ -892,5 +899,5 @@ export function createQuiz({ dom }) {
     if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
   }
 
-  return { setDistrict, enterExam, exitExam, examInProgress, applyRename, toggleExclude, isExcluded };
+  return { setDistrict, enterExam, exitExam, examInProgress, applyRename, toggleExclude, isExcluded, clearExploreSelection };
 }
