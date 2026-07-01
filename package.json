@@ -1,0 +1,13 @@
+{
+  "name": "rbfd-map-test",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive street-knowledge quiz PWA for the Redondo Beach Fire Department.",
+  "type": "module",
+  "scripts": {
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
