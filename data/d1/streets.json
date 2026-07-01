@@ -3,6 +3,7 @@
   "name": "District 1",
   "map": "data/d1/map.svg",
   "viewBox": "-13180325.4 -4010015.5 3356 6503.3",
+  "rotation": 270,
   "streets": [
     "North Paulina Avenue",
     "North Guadalupe Avenue",

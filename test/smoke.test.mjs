@@ -10,9 +10,15 @@ ok($('#map .__maprot'), 'rotation group present');
 ok($$('#map .street').length >= 100, `streets rendered (${$$('#map .street').length})`);
 ok($('#modeTabs'), 'header controls present');
 
-section('rotation persists on the real map');
+section('rotation: honors the shipped default and persists a change');
+const angle = () => { const m = ($('#map .__maprot').getAttribute('transform') || '').match(/rotate\((\d+)/); return m ? +m[1] : 0; };
+ok(angle() === 270, 'D1 opens at its shipped default rotation (270°)');
+const a0 = angle();
 click($('#rotateBtn'));
-ok((ls('rotations') || {}).d1 === 90 && /rotate\(90 /.test($('#map .__maprot').getAttribute('transform')), 'D1 rotate persisted to 90°');
+const a1 = angle();
+ok(a1 === (a0 + 90) % 360, `rotate advances 90° (${a0} -> ${a1})`);
+const stored = (ls('rotations') || {}).d1;
+ok(a1 === 0 ? stored === undefined : stored === a1, 'new angle persisted (or cleared at 0°)');
 
 section('no uncaught errors during boot + interaction');
 ok(state.errors.length === 0, 'zero window errors (' + state.errors.length + ')');
