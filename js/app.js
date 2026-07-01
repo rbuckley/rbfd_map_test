@@ -5,7 +5,7 @@ import { createMapView } from './map.js';
 import { createQuiz } from './quiz.js';
 import { openBuilder, exportDistrictFiles } from './builder.js';
 import { openMapImporter } from './mapImporter.js';
-import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict, exportDistrictsBundle, importDistrictsBundle, loadRenames, saveRenames } from './storage.js';
+import { loadProgress, saveProgress, loadSelectedDistrict, saveSelectedDistrict, deleteUserDistrict, exportDistrictsBundle, importDistrictsBundle, loadRenames, saveRenames, loadRotation, saveRotation } from './storage.js';
 import { applyRenamesToRecord, applyRenamesToSvg, reverseDisplayToOriginal, displayToOriginals, bakeRenamedRecord } from './renames.js';
 
 function gatherDom() {
@@ -45,6 +45,7 @@ async function main() {
   let currentRenames = {};      // { originalName: displayName } overrides
   let currentDistrictId = null;
   let currentSource = null;     // 'builtin' | 'user'
+  let currentRotation = 0;      // effective map orientation for the loaded district
 
   // Load a district and (re)point the quiz + map view at it. Street-name
   // overrides are applied as a non-destructive layer on top of the shipped data.
@@ -75,7 +76,10 @@ async function main() {
     mapWrap.innerHTML = district.svgMarkup;   // markup still carries original names
     const svg = mapWrap.querySelector('#map');
     applyRenamesToSvg(svg, currentRenames);   // patch data-names + merge groups
-    const mapView = createMapView(svg);
+    // Orientation: a local override wins over the value shipped in the config.
+    const savedRot = loadRotation(id);
+    currentRotation = (savedRot != null ? savedRot : (currentOriginal.rotation || 0));
+    const mapView = createMapView(svg, { rotation: currentRotation });
     quiz.setDistrict({
       district,
       svg,
@@ -83,6 +87,7 @@ async function main() {
       initial: loadProgress(id),
       persist: state => saveProgress(id, state),
       onSelect: onExploreSelect,
+      onRotate: angle => { currentRotation = angle; saveRotation(id, angle); },
     });
     hideRenameRow();
     if (renameManager.classList.contains('open')) renderRenameManager();
@@ -313,10 +318,12 @@ async function main() {
     if (renameManager.classList.contains('open')) renderRenameManager();
   });
 
-  // Export the current map (with renames baked in) as committable files.
+  // Export the current map (renames + orientation baked in) as committable files.
   document.getElementById('exportMapBtn').addEventListener('click', () => {
     if (!currentOriginal) return;
-    const msg = exportDistrictFiles(bakeRenamedRecord(currentOriginal, currentRenames));
+    const baked = bakeRenamedRecord(currentOriginal, currentRenames);
+    if (currentRotation) baked.rotation = currentRotation; else delete baked.rotation;
+    const msg = exportDistrictFiles(baked);
     window.alert(msg);
   });
 

@@ -1,7 +1,7 @@
 // MapView: owns pan/zoom for a given <svg> map element. It encapsulates the
 // viewBox state so the quiz engine only needs panToStreet() and resetView().
 
-export function createMapView(svg) {
+export function createMapView(svg, opts = {}) {
   const wrap = svg.parentElement;
   const vbAttr = svg.getAttribute('viewBox').split(/\s+/).map(parseFloat);
   const baseVB0 = { x: vbAttr[0], y: vbAttr[1], w: vbAttr[2], h: vbAttr[3] }; // unrotated
@@ -17,7 +17,10 @@ export function createMapView(svg) {
     while (svg.firstChild) rotG.appendChild(svg.firstChild);
     svg.appendChild(rotG);
   }
-  let angle = 0;
+  // Initial orientation (persisted per district / shipped with the map). Snap
+  // to a quarter turn.
+  let angle = ((Math.round((opts.rotation || 0) / 90) * 90) % 360 + 360) % 360;
+  if (angle) rotG.setAttribute('transform', `rotate(${angle} ${cx} ${cy})`);
   // For 90°/270° the visible extent is the original box with width/height
   // swapped (same centre), so the rotated map still fills the frame.
   const baseForAngle = () => (angle % 180 === 0)
@@ -48,7 +51,9 @@ export function createMapView(svg) {
     angle = (angle + 90) % 360;
     rotG.setAttribute('transform', angle ? `rotate(${angle} ${cx} ${cy})` : '');
     resetView();
+    return angle;
   }
+  const getRotation = () => angle;
 
   // Zoom (mouse wheel)
   wrap.addEventListener('wheel', e => {
@@ -183,5 +188,5 @@ export function createMapView(svg) {
   function clearMarkers() { if (markersG) markersG.innerHTML = ''; }
 
   applyVB();
-  return { resetView, panToStreet, rotate, clientToContent, panToPoint, marker, clearMarkers };
+  return { resetView, panToStreet, rotate, getRotation, clientToContent, panToPoint, marker, clearMarkers };
 }

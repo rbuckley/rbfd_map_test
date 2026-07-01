@@ -14,6 +14,7 @@ export function createQuiz({ dom }) {
   let mapView = null;
   let persist = () => {};
   let onSelect = null;           // notified when a street is tapped in Explore
+  let onRotate = null;           // notified (new angle) when the map is rotated
   let STREET_NAMES = [];
   let confusionGroupList = [];   // array of name-arrays (any number of groups)
   let defaultExcluded = new Set();
@@ -66,6 +67,7 @@ export function createQuiz({ dom }) {
     mapView = opts.mapView;
     persist = opts.persist;
     onSelect = opts.onSelect || null;
+    onRotate = opts.onRotate || null;
     const initial = opts.initial || {};
 
     STREET_NAMES = district.streets;
@@ -645,7 +647,11 @@ export function createQuiz({ dom }) {
   dom.reveal.addEventListener('click', revealCurrent);
   dom.missed.addEventListener('click', retryMissed);
   dom.resetView.addEventListener('click', () => mapView && mapView.resetView());
-  dom.rotate.addEventListener('click', () => mapView && mapView.rotate());
+  dom.rotate.addEventListener('click', () => {
+    if (!mapView) return;
+    const angle = mapView.rotate();
+    if (onRotate) onRotate(angle);
+  });
   dom.submitAns.addEventListener('click', submitAnswer);
   dom.skip.addEventListener('click', skipCurrent);
   dom.excludeBtn.addEventListener('click', excludeCurrent);

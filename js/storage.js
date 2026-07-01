@@ -114,6 +114,25 @@ export function loadAllRenames() {
   return readKey(RENAMES_KEY, {});
 }
 
+const ROTATIONS_KEY = `${KEY_PREFIX}rotations`;
+
+// Per-district map orientation override (0/90/180/270), applied at load over
+// the value shipped in the config. Kept like renames: non-destructive, backed
+// up, and bakeable into the shipped map.
+export function loadRotation(districtId) {
+  const all = readKey(ROTATIONS_KEY, {});
+  return all[districtId];   // undefined when unset -> caller falls back to config
+}
+export function saveRotation(districtId, angle) {
+  const all = readKey(ROTATIONS_KEY, {});
+  if (angle) all[districtId] = angle;
+  else delete all[districtId];   // 0 is the default; don't store it
+  writeKey(ROTATIONS_KEY, all);
+}
+export function loadAllRotations() {
+  return readKey(ROTATIONS_KEY, {});
+}
+
 // User-created districts: a map keyed by id. Each value is a full district
 // record { id, name, viewBox, streets, excluded, confusionGroups, svgMarkup,
 // refImage? } so it can be rendered without any network fetch.
@@ -145,7 +164,7 @@ export function saveSelectedDistrict(id) {
 // A full local backup: user-created districts AND street-name overrides (the
 // latter so corrections to built-in maps aren't lost on an "Export all").
 export function exportDistrictsBundle() {
-  return JSON.stringify({ districts: loadUserDistricts(), renames: loadAllRenames() }, null, 2);
+  return JSON.stringify({ districts: loadUserDistricts(), renames: loadAllRenames(), rotations: loadAllRotations() }, null, 2);
 }
 
 // Merge a backup into the store. Accepts the current wrapped shape
@@ -156,6 +175,7 @@ export function importDistrictsBundle(bundle) {
   const wrapped = bundle.districts && typeof bundle.districts === 'object' && !bundle.districts.id;
   const districts = wrapped ? bundle.districts : bundle;
   const renames = (wrapped && bundle.renames && typeof bundle.renames === 'object') ? bundle.renames : null;
+  const rotations = (wrapped && bundle.rotations && typeof bundle.rotations === 'object') ? bundle.rotations : null;
 
   const all = loadUserDistricts();
   let d = 0, firstId = null;
@@ -171,6 +191,13 @@ export function importDistrictsBundle(bundle) {
       if (map && typeof map === 'object' && Object.keys(map).length) { allR[id] = map; r++; }
     }
     writeKey(RENAMES_KEY, allR);
+  }
+  if (rotations) {
+    const allT = readKey(ROTATIONS_KEY, {});
+    for (const [id, angle] of Object.entries(rotations)) {
+      if (angle) allT[id] = angle;
+    }
+    writeKey(ROTATIONS_KEY, allT);
   }
   return { districts: d, renames: r, firstId };
 }
