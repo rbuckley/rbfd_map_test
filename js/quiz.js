@@ -602,6 +602,25 @@ export function createQuiz({ dom }) {
     nextQuestion();
   }
 
+  // Toggle a street's exclusion by name (used by the Explore inline control).
+  // Returns the new excluded state. Excluded streets are skipped by Test and the
+  // exam's question pools (see getActiveStreets).
+  function toggleExclude(name) {
+    if (!name || !streetEls[name]) return false;
+    if (isExcluded(name)) {
+      defaultExcluded.delete(name);
+      userExcluded.delete(name);
+    } else {
+      userExcluded.add(name);
+      streetEls[name].classList.remove('target', 'correct', 'wrong', 'retry-highlight');
+      if (target === name) target = null;
+    }
+    updateExclusionCount();
+    if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
+    save();
+    return isExcluded(name);
+  }
+
   function excludeCurrent() {
     if (!target) return;
     const name = target;
@@ -873,5 +892,5 @@ export function createQuiz({ dom }) {
     if (dom.exclusionManager.classList.contains('open')) renderExclusionManager();
   }
 
-  return { setDistrict, enterExam, exitExam, examInProgress, applyRename };
+  return { setDistrict, enterExam, exitExam, examInProgress, applyRename, toggleExclude, isExcluded };
 }

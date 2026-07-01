@@ -139,6 +139,7 @@ async function main() {
   const renameManager = document.getElementById('renameManager');
   const mergeWithBtn = document.getElementById('mergeWithBtn');
   const unmergeBtn = document.getElementById('unmergeBtn');
+  const excludeToggleBtn = document.getElementById('excludeToggleBtn');
   let renameTargetOld = null;
   let pendingMergeFrom = null;   // armed by "Merge with…": next Explore tap is the partner
 
@@ -146,7 +147,7 @@ async function main() {
     renameRow.style.display = 'none';
     renameTargetOld = null;
     pendingMergeFrom = null;
-    renameInput.style.display = ''; renameSave.style.display = ''; mergeWithBtn.style.display = '';
+    renameInput.style.display = ''; renameSave.style.display = ''; mergeWithBtn.style.display = ''; excludeToggleBtn.style.display = '';
   }
   // Tapping a street in Explore: either complete an armed merge, or offer the
   // inline rename / merge / unmerge controls for that street.
@@ -162,6 +163,8 @@ async function main() {
     renameInput.value = name;
     const origs = displayToOriginals(currentOriginal.streets, currentRenames)[name] || [name];
     unmergeBtn.style.display = origs.length >= 2 ? '' : 'none';
+    excludeToggleBtn.style.display = '';
+    excludeToggleBtn.textContent = quiz.isExcluded(name) ? 'Include' : 'Exclude';
     renameRow.style.display = 'flex';
   }
 
@@ -226,7 +229,16 @@ async function main() {
     pendingMergeFrom = renameTargetOld;
     renameLabel.textContent = `Tap another street to merge into “${renameTargetOld}”`;
     renameInput.style.display = 'none'; renameSave.style.display = 'none';
-    mergeWithBtn.style.display = 'none'; unmergeBtn.style.display = 'none';
+    mergeWithBtn.style.display = 'none'; unmergeBtn.style.display = 'none'; excludeToggleBtn.style.display = 'none';
+  });
+  // Exclude / include the tapped street from quizzes & exams (Explore mode).
+  excludeToggleBtn.addEventListener('click', () => {
+    if (!renameTargetOld) return;
+    const nowExcluded = quiz.toggleExclude(renameTargetOld);
+    excludeToggleBtn.textContent = nowExcluded ? 'Include' : 'Exclude';
+    const fb = document.getElementById('feedback');
+    fb.textContent = `${nowExcluded ? 'Excluded' : 'Included'}: ${renameTargetOld}`;
+    fb.className = 'feedback info';
   });
   unmergeBtn.addEventListener('click', () => {
     if (renameTargetOld) { const t = renameTargetOld; hideRenameRow(); unmergeSection(t); }
