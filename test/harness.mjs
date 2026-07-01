@@ -50,6 +50,10 @@ export async function bootApp(opts = {}) {
     DOMParser: window.DOMParser, XMLSerializer: window.XMLSerializer, Blob: window.Blob,
   });
   Object.defineProperty(globalThis, 'location', { value: window.location, configurable: true });
+  // app.js registers a service worker at import via `'serviceWorker' in navigator`.
+  // Node <21 has no global navigator; give it jsdom's (which lacks serviceWorker,
+  // so registration is correctly skipped). Node 21+ already has one — leave it.
+  try { Object.defineProperty(globalThis, 'navigator', { value: window.navigator, configurable: true }); } catch { /* already provided */ }
   window.SVGElement.prototype.getBBox = () => ({ x: 0, y: 0, width: 10, height: 10 });
 
   const state = { alerts: [], errors: [] };
