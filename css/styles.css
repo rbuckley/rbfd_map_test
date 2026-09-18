@@ -416,3 +416,9 @@ body.exam-active .map-wrap { margin-top: 44px; margin-bottom: 56px; }
 .exam-missed { font-size: 12px; max-height: 28vh; overflow-y: auto; border-top: 1px solid #2d4a6f; padding-top: 8px; }
 .exam-missed b { color: var(--accent); }
 .exam-missed ul { margin: 4px 0 0; padding-left: 18px; }
+/* Two-column miss rows: correct street name + what the examinee did. */
+.exam-miss-list { list-style: none; padding-left: 0 !important; }
+.exam-miss-list li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.exam-miss-name { color: var(--text); font-weight: 600; }
+.exam-miss-why { color: var(--dim); white-space: nowrap; }
+.exam-miss-skip .exam-miss-name { color: var(--dim); font-style: italic; font-weight: 500; }

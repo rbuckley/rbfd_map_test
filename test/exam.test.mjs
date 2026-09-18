@@ -41,6 +41,7 @@ for (let i = 0; i < 25; i++) {
 }
 ok($('#examResults').style.display === 'flex' && /15\/25/.test($('#examResultBody').textContent), 'results 15/25');
 ok(/PASS/.test($('#examResultBody').textContent), 'PASS at exactly 60%');
+ok(/tapped/.test($('#examResultBody').textContent), 'missed rows show the wrong street the examinee tapped');
 
 section('isolation: practice progress untouched, Done restores');
 ok(JSON.stringify(ls('u1')) === JSON.stringify(SEED), 'progress byte-identical after exam');
@@ -53,5 +54,6 @@ $$('#examCoverage .mode-tab').find(b => /25 questions/.test(b.textContent)).clic
 click($('#examStart'));
 click($('#examEnd'));
 ok(/0\/25/.test($('#examResultBody').textContent) && /FAIL/.test($('#examResultBody').textContent), 'ending immediately -> 0/25 FAIL');
+ok(/no answer/.test($('#examResultBody').textContent), 'un-answered streets show "no answer" as the reason');
 
 done();

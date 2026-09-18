@@ -921,7 +921,23 @@ export function createQuiz({ dom }) {
     const correct = exam.questions.filter(q => q.correct).length;
     const pct = total ? Math.round(100 * correct / total) : 0;
     const passed = pct >= exam.passPct;
-    const missed = exam.questions.filter(q => !q.correct).map(q => q.target);
+    // Per-street breakdown for the proctor: what the examinee did on each miss.
+    // Locate → the wrong street they tapped; Click-to-fill → the name they typed;
+    // either way, a skipped/"don't know"/ended-early question shows "no answer".
+    const missedQs = exam.questions.filter(q => !q.correct);
+    const notAttempted = Math.max(0, exam.count - exam.questions.length);   // click-to-fill, ended early
+    const missedCount = total - correct;                                     // = missedQs.length + notAttempted
+    const reasonFor = q => {
+      if (q.answer == null) return 'no answer';
+      return exam.selection === 'click'
+        ? `typed “${escapeHtml(q.answer)}”`
+        : `tapped ${escapeHtml(q.answer)}`;
+    };
+    const missedRows = missedQs.map(q =>
+      `<li><span class="exam-miss-name">${escapeHtml(q.target)}</span><span class="exam-miss-why">${reasonFor(q)}</span></li>`).join('');
+    const notAttemptedRow = notAttempted
+      ? `<li class="exam-miss-skip"><span class="exam-miss-name">${notAttempted} street${notAttempted === 1 ? '' : 's'} not attempted</span><span class="exam-miss-why">ended early</span></li>`
+      : '';
     const dur = Math.max(0, Math.round((exam.endTime - exam.startTime) / 1000));
     const mm = String(Math.floor(dur / 60)).padStart(2, '0'), ss = String(dur % 60).padStart(2, '0');
     examUI.resultTitle.textContent = passed ? '✅ Pass' : '❌ Fail';
@@ -933,9 +949,9 @@ export function createQuiz({ dom }) {
         <span>District: ${escapeHtml(district ? district.name : '')}</span>
         <span>Time: ${mm}:${ss}</span>
       </div>
-      ${missed.length
-        ? `<div class="exam-missed"><b>Missed (${missed.length})</b><ul>${missed.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul></div>`
-        : '<div class="exam-missed">All streets located correctly. 🎉</div>'}`;
+      ${missedCount
+        ? `<div class="exam-missed"><b>Missed (${missedCount})</b><ul class="exam-miss-list">${missedRows}${notAttemptedRow}</ul></div>`
+        : '<div class="exam-missed">All streets correct. 🎉</div>'}`;
     examUI.results.style.display = 'flex';
   }
 

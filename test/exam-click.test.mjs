@@ -37,7 +37,8 @@ ok(/Named 2 of 3/.test($('#examProgress').textContent), 'second answer recorded'
 tap('Carter Rd'); setVal($('#examAnswer'), 'Carter Rd'); click($('#examSubmit'));
 ok($('#examResults').style.display === 'flex', 'exam finishes after the last street');
 ok(/2\/3/.test($('#examResultBody').textContent), 'scored 2 of 3');
-ok(/Bravo Ave/.test($('#examResultBody').textContent), 'the mis-named street is listed as missed');
+const body = $('#examResultBody').textContent;
+ok(/Bravo Ave/.test(body) && /typed/.test(body) && /Nope Street/.test(body), 'missed row shows the street + what the examinee typed');
 ok(!$('body').classList.contains('exam-active'), 'lockdown lifted at results');
 
 done();
