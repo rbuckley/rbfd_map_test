@@ -365,6 +365,13 @@ body.exam-active .map-wrap { margin-top: 44px; margin-bottom: 56px; }
 
 /* Neutral "your pick" highlight — deliberately NOT green/red/orange (no leakage). */
 .street.exam-pick .vis { stroke: #4aa3ff !important; stroke-width: 7 !important; }
+/* Already-answered street in click-to-fill: muted, reveals nothing about correctness. */
+.street.exam-done .vis { stroke: #55637a !important; stroke-width: 5 !important; }
+#examAnswer {
+  flex: 1; min-width: 0; padding: 10px; font-size: 16px; font-family: inherit;
+  background: #0a1420; color: var(--text); border: 1px solid #2d4a6f; border-radius: 6px;
+}
+#examAnswer:focus { border-color: var(--accent); outline: none; }
 
 .exam-bar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000; height: 44px;

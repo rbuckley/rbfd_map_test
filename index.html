@@ -126,6 +126,10 @@
       <label class="exam-field">Examinee name<input id="examName" type="text" autocomplete="off" autocapitalize="words"></label>
       <label class="exam-field">Badge / ID<input id="examBadge" type="text" autocomplete="off"></label>
       <div class="exam-field">Coverage<div class="mode-tabs" id="examCoverage"></div></div>
+      <div class="exam-field">Format<div class="mode-tabs" id="examFormat">
+        <button type="button" class="mode-tab active" data-format="random">Locate (random)</button>
+        <button type="button" class="mode-tab" data-format="click">Click to fill in</button>
+      </div></div>
       <label class="exam-field">Pass threshold (%)<input id="examPass" type="number" min="1" max="100" value="90"></label>
       <div class="exam-actions">
         <button class="btn primary" id="examStart" disabled>Start exam</button>
@@ -140,6 +144,7 @@
     <span class="exam-locate" id="examLocate"></span>
   </div>
   <div class="exam-panel" id="examPanel" style="display:none;">
+    <input id="examAnswer" type="text" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="Type the street name" style="display:none;"/>
     <button class="btn primary" id="examSubmit" disabled>Submit answer</button>
     <button class="btn" id="examDontKnow">Don't know</button>
     <span style="flex:1"></span>

@@ -147,7 +147,7 @@ export function createQuiz({ dom }) {
   }
   function clearAllMarksComplete() {
     svg.querySelectorAll('.street').forEach(g => {
-      g.classList.remove('target', 'correct', 'wrong', 'revealed', 'hover', 'retry-highlight');
+      g.classList.remove('target', 'correct', 'wrong', 'revealed', 'hover', 'retry-highlight', 'exam-pick', 'exam-done');
     });
   }
 
@@ -702,20 +702,30 @@ export function createQuiz({ dom }) {
     const g = id => document.getElementById(id);
     const u = {
       setup: g('examSetup'), setupDistrict: g('examSetupDistrict'),
-      name: g('examName'), badge: g('examBadge'), coverage: g('examCoverage'),
+      name: g('examName'), badge: g('examBadge'), coverage: g('examCoverage'), format: g('examFormat'),
       pass: g('examPass'), start: g('examStart'), cancel: g('examCancel'),
       bar: g('examBar'), progress: g('examProgress'), locate: g('examLocate'),
-      panel: g('examPanel'), submit: g('examSubmit'), dontKnow: g('examDontKnow'), end: g('examEnd'),
+      panel: g('examPanel'), answer: g('examAnswer'), submit: g('examSubmit'), dontKnow: g('examDontKnow'), end: g('examEnd'),
       results: g('examResults'), resultTitle: g('examResultTitle'), resultBody: g('examResultBody'), done: g('examDone'),
     };
     u.start.addEventListener('click', startExam);
     u.cancel.addEventListener('click', exitExam);
-    u.submit.addEventListener('click', () => { if (exam && exam.pickedName) commitAnswer(exam.pickedName); });
-    u.dontKnow.addEventListener('click', () => { if (exam) commitAnswer(null); });
+    u.submit.addEventListener('click', submitExamAnswer);
+    u.dontKnow.addEventListener('click', examDontKnow);
     u.end.addEventListener('click', () => { if (exam) finishExam(); });
     u.done.addEventListener('click', exitExam);
     u.name.addEventListener('input', updateStartEnabled);
     u.badge.addEventListener('input', updateStartEnabled);
+    // Format toggle (Locate/random vs Click-to-fill) — mutually exclusive tabs.
+    u.format.querySelectorAll('.mode-tab').forEach(b => b.addEventListener('click', () => {
+      u.format.querySelectorAll('.mode-tab').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    }));
+    // Click-to-fill answer box: Submit unlocks once a street is picked and typed.
+    u.answer.addEventListener('input', () => {
+      if (exam && exam.selection === 'click') u.submit.disabled = !(exam.pickedName && u.answer.value.trim());
+    });
+    u.answer.addEventListener('keydown', e => { if (e.key === 'Enter' && !u.submit.disabled) submitExamAnswer(); });
     examUI = u;
     return u;
   }
@@ -734,6 +744,10 @@ export function createQuiz({ dom }) {
     const b = examUI.coverage.querySelector('.mode-tab.active');
     return b ? parseInt(b.dataset.count, 10) : 0;
   };
+  const selectedFormat = () => {
+    const b = examUI.format.querySelector('.mode-tab.active');
+    return b ? b.dataset.format : 'random';
+  };
   function updateStartEnabled() {
     examUI.start.disabled = !(examUI.name.value.trim() && examUI.badge.value.trim() && getActiveStreets().length > 0);
   }
@@ -747,6 +761,9 @@ export function createQuiz({ dom }) {
     u.setupDistrict.textContent = `District: ${district ? district.name : ''} — ${active.length} active streets`;
     u.name.value = ''; u.badge.value = ''; u.pass.value = '90';
     renderCoverageOptions(active.length);
+    // Reset the format toggle to the default (Locate / random).
+    u.format.querySelectorAll('.mode-tab').forEach((b, i) => b.classList.toggle('active', i === 0));
+    u.answer.style.display = 'none'; u.answer.value = '';
     updateStartEnabled();
     u.results.style.display = 'none';
     u.setup.style.display = 'flex';
@@ -761,15 +778,22 @@ export function createQuiz({ dom }) {
     let pass = parseInt(u.pass.value, 10);
     if (!Number.isFinite(pass) || pass < 1) pass = 90;
     if (pass > 100) pass = 100;
-    const pool = shuffle(active.slice()).slice(0, count);
-    exam = {
+    const selection = selectedFormat();   // 'random' (locate) | 'click' (fill in)
+    const base = {
       phase: 'running', examinee: { name, badge }, districtId: exam.districtId, passPct: pass,
+      selection, count, index: 0, startTime: Date.now(), endTime: 0, pickedEl: null, pickedName: null,
+    };
+    if (selection === 'click') {
+      // Click-to-fill: questions accumulate as the examinee taps + names streets.
+      exam = { ...base, questions: [], answered: new Set(), activeSet: new Set(active) };
+    } else {
+      // Locate: a fixed pool of named targets to find on the map.
+      const pool = shuffle(active.slice()).slice(0, count);
       // Target-type-agnostic question shape. Streets score by name match today
       // (the `.street` tap already yields a name); a future 'block' type would
       // set type:'block' + a proximity hitTest, reusing the same run/lockdown.
-      questions: pool.map(s => ({ type: 'street', target: s, prompt: `Locate: ${s}`, answer: null, correct: false })),
-      index: 0, startTime: Date.now(), endTime: 0, pickedEl: null, pickedName: null,
-    };
+      exam = { ...base, questions: pool.map(s => ({ type: 'street', target: s, prompt: `Locate: ${s}`, answer: null, correct: false })) };
+    }
     u.setup.style.display = 'none';
     document.body.classList.add('exam-active');
     const menu = document.getElementById('mapsMenu'); if (menu) menu.style.display = 'none';
@@ -780,33 +804,78 @@ export function createQuiz({ dom }) {
   }
 
   function renderExamQuestion() {
-    const u = examUI, q = exam.questions[exam.index];
+    const u = examUI;
     if (exam.pickedEl) exam.pickedEl.classList.remove('exam-pick');
     exam.pickedEl = null; exam.pickedName = null;
-    u.progress.textContent = `Question ${exam.index + 1} of ${exam.questions.length}`;
-    u.locate.textContent = q.prompt || `Locate: ${q.target}`;
     u.submit.disabled = true;
+    if (exam.selection === 'click') {
+      u.progress.textContent = `Named ${exam.index} of ${exam.count}`;
+      u.locate.textContent = 'Tap a street, then type its name.';
+      u.answer.style.display = ''; u.answer.value = '';
+    } else {
+      const q = exam.questions[exam.index];
+      u.progress.textContent = `Question ${exam.index + 1} of ${exam.count}`;
+      u.locate.textContent = q.prompt || `Locate: ${q.target}`;
+      u.answer.style.display = 'none';
+    }
   }
 
   // Capture-phase tap during a running exam: select the tapped street (neutral
   // highlight only) without revealing correctness; ignore empty-space taps.
+  // In click-to-fill, already-answered / non-pool streets are locked out.
   function handleExamTap(e) {
     e.stopPropagation();
     let el = e.target;
     while (el && el !== svg && !(el.classList && el.classList.contains('street'))) el = el.parentNode;
     if (!el || !el.classList || !el.classList.contains('street')) return;
+    const name = el.dataset.name;
+    if (exam.selection === 'click' && (exam.answered.has(name) || !exam.activeSet.has(name))) return;
     if (exam.pickedEl) exam.pickedEl.classList.remove('exam-pick');
-    exam.pickedEl = el; exam.pickedName = el.dataset.name;
+    exam.pickedEl = el; exam.pickedName = name;
     el.classList.add('exam-pick');
-    examUI.submit.disabled = false;
+    if (exam.selection === 'click') {
+      examUI.answer.focus();
+      examUI.submit.disabled = !examUI.answer.value.trim();
+    } else {
+      examUI.submit.disabled = false;
+    }
   }
 
+  // Submit / Don't-know dispatch by format.
+  function submitExamAnswer() {
+    if (!exam || !exam.pickedName) return;
+    if (exam.selection === 'click') commitFill(examUI.answer.value.trim() || null);
+    else commitAnswer(exam.pickedName);
+  }
+  function examDontKnow() {
+    if (!exam) return;
+    if (exam.selection === 'click') { if (exam.pickedName) commitFill(null); }
+    else commitAnswer(null);
+  }
+
+  // Locate: the tapped street name is the answer, scored against the target.
   function commitAnswer(answerName) {
     const q = exam.questions[exam.index];
     q.answer = answerName;
     q.correct = answerName === q.target;   // strict: both are canonical street names
     exam.index++;
-    if (exam.index >= exam.questions.length) finishExam();
+    afterExamCommit();
+  }
+  // Click-to-fill: the tapped street IS the target; the typed text is the answer,
+  // matched with the same normalization Test mode uses.
+  function commitFill(typed) {
+    const target = exam.pickedName;
+    if (!target) return;
+    const ok = typed != null && norm(typed) === norm(target);
+    exam.questions.push({ type: 'street', target, answer: typed, correct: ok });
+    exam.answered.add(target);
+    if (exam.pickedEl) { exam.pickedEl.classList.remove('exam-pick'); exam.pickedEl.classList.add('exam-done'); }
+    exam.pickedEl = null; exam.pickedName = null;
+    exam.index++;
+    afterExamCommit();
+  }
+  function afterExamCommit() {
+    if (exam.index >= exam.count) finishExam();
     else renderExamQuestion();
   }
 
@@ -816,10 +885,11 @@ export function createQuiz({ dom }) {
     exam.endTime = Date.now();
     exam.phase = 'results';
     if (exam.pickedEl) { exam.pickedEl.classList.remove('exam-pick'); exam.pickedEl = null; }
+    svg.querySelectorAll('.street.exam-done').forEach(g => g.classList.remove('exam-done'));
     document.body.classList.remove('exam-active');
     examUI.bar.style.display = 'none';
     examUI.panel.style.display = 'none';
-    const total = exam.questions.length;
+    const total = exam.count;
     const correct = exam.questions.filter(q => q.correct).length;
     const pct = total ? Math.round(100 * correct / total) : 0;
     const passed = pct >= exam.passPct;
