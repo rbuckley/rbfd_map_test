@@ -479,12 +479,40 @@ export function createQuiz({ dom }) {
     .replace(/\be\b/g, 'east').replace(/\bw\b/g, 'west')
     .trim();
 
+  // Levenshtein edit distance (street-name length — plain DP is plenty).
+  function editDistance(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+  // Forgiving name match: exact after normalization, or within a small,
+  // length-scaled typo budget (0 for very short names, 1 for medium, 2 for
+  // long) so minor misspellings still count. Used by Test (type) and the exam.
+  function answersMatch(a, b) {
+    const na = norm(a), nb = norm(b);
+    if (na === nb) return true;
+    const len = Math.max(na.length, nb.length);
+    const budget = len <= 4 ? 0 : len <= 9 ? 1 : 2;
+    if (Math.abs(na.length - nb.length) > budget) return false;
+    return editDistance(na, nb) <= budget;
+  }
+
   function submitAnswer() {
     if (mode === 'blocks') { submitBlockAnswer(); return; }
     if (!target) return;
     const answer = answerMethod === 'dropdown' ? dom.dropdown.value : dom.textbox.value.trim();
     if (!answer) return;
-    if (norm(answer) === norm(target)) markCorrect(target);
+    if (answersMatch(answer, target)) markCorrect(target);
     else markWrongCurrent(answerMethod === 'dropdown' ? answer : null);
   }
 
@@ -866,7 +894,7 @@ export function createQuiz({ dom }) {
   function commitFill(typed) {
     const target = exam.pickedName;
     if (!target) return;
-    const ok = typed != null && norm(typed) === norm(target);
+    const ok = typed != null && answersMatch(typed, target);
     exam.questions.push({ type: 'street', target, answer: typed, correct: ok });
     exam.answered.add(target);
     if (exam.pickedEl) { exam.pickedEl.classList.remove('exam-pick'); exam.pickedEl.classList.add('exam-done'); }
