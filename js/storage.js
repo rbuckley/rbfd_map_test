@@ -10,10 +10,10 @@ function keyFor(districtId) {
 }
 
 const DEFAULT_STATE = () => ({
-  correct: 0,
+  correct: 0,        // score is session-only — app.js starts each load at 0
   total: 0,
-  missed: [],        // names answered wrong / skipped, persisted across reloads
-  userExcluded: [],  // streets the user chose to exclude
+  missed: [],        // names answered wrong / skipped (session-only)
+  userExcluded: [],  // streets the user chose to exclude (persists across reloads)
 });
 
 // In-memory fallback used when localStorage is unavailable.

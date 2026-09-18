@@ -452,6 +452,17 @@ export function createQuiz({ dom }) {
     dom.score.textContent = `${correct}/${total}`;
     dom.pct.textContent = total ? Math.round(100 * correct / total) + '%' : '--';
   }
+  // Manual reset: zero the live practice score + retry pool. (The score is
+  // session-only anyway — it also starts fresh on every page load.)
+  function resetScore() {
+    correct = 0;
+    total = 0;
+    missed.clear();
+    asked.clear();
+    useMissedPool = false;
+    updateScore();
+    save();
+  }
   function showPrompt(s) { dom.prompt.textContent = s; }
   function showFeedback(s, cls) {
     dom.feedback.textContent = s;
@@ -662,6 +673,7 @@ export function createQuiz({ dom }) {
   dom.newQ.addEventListener('click', startNew);
   dom.reveal.addEventListener('click', revealCurrent);
   dom.missed.addEventListener('click', retryMissed);
+  dom.resetScore.addEventListener('click', resetScore);
   dom.resetView.addEventListener('click', () => mapView && mapView.resetView());
   dom.rotate.addEventListener('click', () => {
     if (!mapView) return;

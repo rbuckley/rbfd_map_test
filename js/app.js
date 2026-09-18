@@ -13,6 +13,7 @@ function gatherDom() {
   return {
     score: $('score'),
     pct: $('pct'),
+    resetScore: $('resetScore'),
     prompt: $('prompt'),
     feedback: $('feedback'),
     dropdown: $('dropdown'),
@@ -83,7 +84,9 @@ async function main() {
       district,
       svg,
       mapView,
-      initial: loadProgress(id),
+      // Score is session-only: start every page load at 0/0 (deliberate
+      // exclusions still persist). A manual Reset button zeroes it live too.
+      initial: { ...loadProgress(id), correct: 0, total: 0, missed: [] },
       persist: state => saveProgress(id, state),
       onSelect: onExploreSelect,
       onRotate: angle => { currentRotation = angle; saveRotation(id, angle); },

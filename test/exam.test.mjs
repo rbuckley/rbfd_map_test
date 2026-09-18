@@ -12,7 +12,7 @@ const tap = n => $(`.street[data-name="${n}"]`).dispatchEvent(new window.MouseEv
 const curTarget = () => $('#examLocate').textContent.replace(/^Locate:\s*/, '');
 
 section('setup gating + preset clamping');
-ok($('#score').textContent === '7/9', 'seeded practice score');
+ok($('#score').textContent === '0/0', 'score resets to 0/0 on load (stored progress untouched)');
 goSection($, "exam");
 ok($('#examSetup').style.display === 'flex' && $('#examStart').disabled, 'setup shown, Start disabled');
 setVal($('#examName'), 'Jane'); setVal($('#examBadge'), 'FF-1');
@@ -45,7 +45,7 @@ ok(/PASS/.test($('#examResultBody').textContent), 'PASS at exactly 60%');
 section('isolation: practice progress untouched, Done restores');
 ok(JSON.stringify(ls('u1')) === JSON.stringify(SEED), 'progress byte-identical after exam');
 click($('#examDone'));
-ok(!$('body').classList.contains('exam-active') && $('#score').textContent === '7/9', 'exam closed, practice score intact');
+ok(!$('body').classList.contains('exam-active') && $('#score').textContent === '0/0', 'exam closed, practice score display intact (0/0)');
 
 section('end-early counts the rest as missed');
 goSection($, "exam"); setVal($('#examName'), 'A'); setVal($('#examBadge'), 'B');
