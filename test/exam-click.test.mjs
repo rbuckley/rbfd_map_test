@@ -41,4 +41,14 @@ const body = $('#examResultBody').textContent;
 ok(/Bravo Ave/.test(body) && /typed/.test(body) && /Nope Street/.test(body), 'missed row shows the street + what the examinee typed');
 ok(!$('body').classList.contains('exam-active'), 'lockdown lifted at results');
 
+section('Download report saves a .txt with the full breakdown');
+let dl = null;
+window.HTMLAnchorElement.prototype.click = function () { dl = { href: this.href, name: this.download }; };
+click($('#examDownload'));
+ok(dl && /\.txt$/.test(dl.name), 'downloads a .txt file');
+const report = decodeURIComponent(dl.href.replace(/^data:text\/plain;charset=utf-8,/, ''));
+ok(/Examinee : Jane \(FF-1\)/.test(report), 'report names the examinee + badge');
+ok(/Score {4}: 2\/3/.test(report), 'report states the score');
+ok(/Bravo Ave — typed "Nope Street"/.test(report), 'report lists the missed street + reason');
+
 done();

@@ -42,6 +42,7 @@ export function createQuiz({ dom }) {
   // Certification exam (null when inactive). Fully isolated from practice score.
   let exam = null;
   let examUI = null;
+  let examReport = null;   // { filename, text } captured at finish, for Download report
 
   function save() {
     persist({ correct, total, missed, userExcluded });
@@ -734,7 +735,7 @@ export function createQuiz({ dom }) {
       pass: g('examPass'), start: g('examStart'), cancel: g('examCancel'),
       bar: g('examBar'), progress: g('examProgress'), locate: g('examLocate'),
       panel: g('examPanel'), answer: g('examAnswer'), submit: g('examSubmit'), dontKnow: g('examDontKnow'), end: g('examEnd'),
-      results: g('examResults'), resultTitle: g('examResultTitle'), resultBody: g('examResultBody'), done: g('examDone'),
+      results: g('examResults'), resultTitle: g('examResultTitle'), resultBody: g('examResultBody'), done: g('examDone'), download: g('examDownload'),
     };
     u.start.addEventListener('click', startExam);
     u.cancel.addEventListener('click', exitExam);
@@ -742,6 +743,7 @@ export function createQuiz({ dom }) {
     u.dontKnow.addEventListener('click', examDontKnow);
     u.end.addEventListener('click', () => { if (exam) finishExam(); });
     u.done.addEventListener('click', exitExam);
+    u.download.addEventListener('click', downloadExamReport);
     u.name.addEventListener('input', updateStartEnabled);
     u.badge.addEventListener('input', updateStartEnabled);
     // Format toggle (Locate/random vs Click-to-fill) — mutually exclusive tabs.
@@ -927,19 +929,22 @@ export function createQuiz({ dom }) {
     const missedQs = exam.questions.filter(q => !q.correct);
     const notAttempted = Math.max(0, exam.count - exam.questions.length);   // click-to-fill, ended early
     const missedCount = total - correct;                                     // = missedQs.length + notAttempted
-    const reasonFor = q => {
+    const reasonText = q => {
       if (q.answer == null) return 'no answer';
-      return exam.selection === 'click'
-        ? `typed “${escapeHtml(q.answer)}”`
-        : `tapped ${escapeHtml(q.answer)}`;
+      return exam.selection === 'click' ? `typed "${q.answer}"` : `tapped ${q.answer}`;
     };
     const missedRows = missedQs.map(q =>
-      `<li><span class="exam-miss-name">${escapeHtml(q.target)}</span><span class="exam-miss-why">${reasonFor(q)}</span></li>`).join('');
+      `<li><span class="exam-miss-name">${escapeHtml(q.target)}</span><span class="exam-miss-why">${escapeHtml(reasonText(q))}</span></li>`).join('');
     const notAttemptedRow = notAttempted
       ? `<li class="exam-miss-skip"><span class="exam-miss-name">${notAttempted} street${notAttempted === 1 ? '' : 's'} not attempted</span><span class="exam-miss-why">ended early</span></li>`
       : '';
     const dur = Math.max(0, Math.round((exam.endTime - exam.startTime) / 1000));
     const mm = String(Math.floor(dur / 60)).padStart(2, '0'), ss = String(dur % 60).padStart(2, '0');
+    const formatLabel = exam.selection === 'click' ? 'Click to fill in' : 'Locate (random)';
+    examReport = buildExamReport({
+      correct, total, pct, passed, missedQs, notAttempted, missedCount, reasonText,
+      duration: `${mm}:${ss}`, format: formatLabel,
+    });
     examUI.resultTitle.textContent = passed ? '✅ Pass' : '❌ Fail';
     examUI.resultBody.innerHTML = `
       <div class="exam-result-score">${correct}/${total} <span style="font-size:16px;color:var(--dim)">(${pct}%)</span></div>
@@ -953,6 +958,43 @@ export function createQuiz({ dom }) {
         ? `<div class="exam-missed"><b>Missed (${missedCount})</b><ul class="exam-miss-list">${missedRows}${notAttemptedRow}</ul></div>`
         : '<div class="exam-missed">All streets correct. 🎉</div>'}`;
     examUI.results.style.display = 'flex';
+  }
+
+  // Assemble the plain-text report + a safe filename from the finished exam.
+  function buildExamReport(r) {
+    const when = new Date();
+    const safe = s => (String(s == null ? '' : s).replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'x');
+    const lines = [
+      'RBFD Certification Exam — Result',
+      '================================',
+      `Examinee : ${exam.examinee.name} (${exam.examinee.badge})`,
+      `District : ${district ? district.name : ''}`,
+      `Date     : ${when.toLocaleString()}`,
+      `Format   : ${r.format}`,
+      `Duration : ${r.duration}`,
+      '',
+      `Score    : ${r.correct}/${r.total} (${r.pct}%)`,
+      `Result   : ${r.passed ? 'PASS' : 'FAIL'} — needed ${exam.passPct}%`,
+      '',
+    ];
+    if (r.missedCount) {
+      lines.push(`Missed (${r.missedCount}):`);
+      for (const q of r.missedQs) lines.push(`  - ${q.target} — ${r.reasonText(q)}`);
+      if (r.notAttempted) lines.push(`  - ${r.notAttempted} street${r.notAttempted === 1 ? '' : 's'} not attempted (ended early)`);
+    } else {
+      lines.push('Missed (0): none — all streets correct.');
+    }
+    const filename = `exam_${safe(district ? district.name : 'map')}_${safe(exam.examinee.badge || exam.examinee.name || 'examinee')}_${when.toISOString().slice(0, 10)}.txt`;
+    return { filename, text: lines.join('\n') + '\n' };
+  }
+
+  // Download the captured report as a .txt file (data URL — no blob lifecycle).
+  function downloadExamReport() {
+    if (!examReport) return;
+    const a = document.createElement('a');
+    a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(examReport.text);
+    a.download = examReport.filename;
+    document.body.appendChild(a); a.click(); a.remove();
   }
 
   function hideExamUI() {
