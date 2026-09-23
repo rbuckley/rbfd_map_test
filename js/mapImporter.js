@@ -122,6 +122,41 @@ const FEATURE_FILTERS = p =>
   `way["natural"="beach"]${p};relation["natural"="beach"]${p};` +
   `way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"]${p};`;
 
+// Reduce a boundary ring to at most `target` evenly-spaced vertices, dropping a
+// duplicated closing point — small enough to drag by hand when editing a city
+// outline. Ring + result are [[lng,lat],...].
+export function downsampleRing(ring, target = 32) {
+  let r = ring.slice();
+  if (r.length > 1) {
+    const a = r[0], b = r[r.length - 1];
+    if (a[0] === b[0] && a[1] === b[1]) r = r.slice(0, -1);
+  }
+  if (r.length <= target) return r;
+  const out = [];
+  for (let i = 0; i < target; i++) out.push(r[Math.floor(i * r.length / target)]);
+  return out;
+}
+
+// Planar distance from point p to segment a→b (all [x,y]); good enough at city scale.
+export function segmentDistance(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+// Where to insert a new vertex in a closed ring so it lands on the nearest edge.
+// ring: [[lng,lat],...], pt: [lng,lat]. Returns an index in 1..ring.length.
+export function nearestEdgeInsertIndex(ring, pt) {
+  let best = Infinity, idx = ring.length;
+  for (let i = 0; i < ring.length; i++) {
+    const d = segmentDistance(pt, ring[i], ring[(i + 1) % ring.length]);
+    if (d < best) { best = d; idx = i + 1; }
+  }
+  return idx;
+}
+
 export function overpassQuery(polyLatLng) {
   const poly = polyLatLng.map(p => `${p.lat} ${p.lng}`).join(' ');
   return `[out:json][timeout:90];(${FEATURE_FILTERS(`(poly:"${poly}")`)});out geom;`;
@@ -421,6 +456,7 @@ export function openMapImporter({ onSaved } = {}) {
       <label class="mi-check"><input type="checkbox" id="miSubdivide"> Subdivide into districts</label>
       <label class="mi-check"><input type="checkbox" id="miBlocks"> Address blocks</label>
       <button id="miFinish" class="btn primary">Finish boundary &amp; import</button>
+      <button id="miEditOutline" class="btn" style="display:none;">✎ Edit outline</button>
       <button id="miCreate" class="btn primary" style="display:none;">Create district from area</button>
       <button id="miClear" class="btn">Clear boundary</button>
       <button id="miAddr" class="btn">🏠 Address coverage</button>
@@ -435,7 +471,7 @@ export function openMapImporter({ onSaved } = {}) {
         <div class="builder-hint" id="miHint">Loading map…</div>
       </div>
       <div class="builder-side">
-        <div class="builder-section mi-note">ℹ️ A <b>drawn boundary</b> pulls every street inside your shape — <b>across city lines</b>. <b>“Pull a city”</b> stays within that city’s official limits (and Subdivide splits only the city).</div>
+        <div class="builder-section mi-note">ℹ️ A <b>drawn boundary</b> pulls every street inside your shape — <b>across city lines</b>. <b>“Pull a city”</b> stays within that city’s official limits (and Subdivide splits only the city). To keep a city but reach a few streets past the line, pick it then <b>“✎ Edit outline”</b> and drag the points outward.</div>
         <div class="builder-section"><b>Streets</b> (<span id="miCount">0</span>)</div>
         <div id="miList" class="builder-list"></div>
         <div class="builder-section" id="miCreatedSection" style="display:none;"><b>Created districts</b></div>
@@ -499,7 +535,7 @@ export function openMapImporter({ onSaved } = {}) {
     hint('Click to drop boundary points around your district, then “Finish boundary & import”.');
 
     let points = [];                 // drawn boundary [L.LatLng]
-    const markers = [];
+    const markers = [];              // draggable vertex handles, parallel to points
     let line = L.polyline([], { color: '#ff8a3d', weight: 2 }).addTo(map);
     let cityRing = null;             // [[lng,lat],...] from a chosen city
     let areaId = null;               // Overpass area id for the chosen city
@@ -508,22 +544,65 @@ export function openMapImporter({ onSaved } = {}) {
     let subdividing = false;         // after a pull, draw sub-districts
     let subdivideOuter = null;       // the pulled area's boundary ([lng,lat]) — clips sub-districts to the city
     let cityLayer = null;
+    let closedRing = false;          // editing a closed outline (seeded from a city) vs. drawing fresh
 
     function clearCity() {
       if (cityLayer) { map.removeLayer(cityLayer); cityLayer = null; }
       cityRing = null; areaId = null;
+      $('miEditOutline').style.display = 'none';
     }
     function clearDrawn() {
       points = [];
       markers.forEach(m => map.removeLayer(m)); markers.length = 0;
       line.setLatLngs([]);
+      closedRing = false;
     }
 
+    // Vertex handles: a small draggable dot per boundary point. Points are always
+    // re-derived from the markers so drag/insert/remove stay in sync.
+    const redrawLine = () => line.setLatLngs(points.concat(points.length > 2 ? [points[0]] : []));
+    const syncPoints = () => { points = markers.map(m => m.getLatLng()); redrawLine(); };
+    function makeVertexMarker(latlng) {
+      const m = L.marker(latlng, { draggable: true, icon: L.divIcon({ className: 'mi-vertex', iconSize: [14, 14], iconAnchor: [7, 7] }) });
+      m.on('drag', syncPoints);
+      m.on('contextmenu', () => removeVertex(m));   // right-click / long-press to delete
+      m.addTo(map);
+      return m;
+    }
+    function addVertexAt(latlng, index) {
+      const m = makeVertexMarker(latlng);
+      if (index == null || index >= markers.length) markers.push(m);
+      else markers.splice(index, 0, m);
+      syncPoints();
+    }
+    function removeVertex(m) {
+      if (markers.length <= 3) return;   // a polygon needs at least 3
+      map.removeLayer(m);
+      const i = markers.indexOf(m); if (i >= 0) markers.splice(i, 1);
+      syncPoints();
+    }
+    // Convert the chosen city into an editable, extendable outline (crosses city
+    // lines on import, since it becomes a drawn boundary).
+    function editCityOutline() {
+      if (!cityRing) return;
+      const simplified = downsampleRing(cityRing, 32);
+      clearDrawn();
+      for (const [lng, lat] of simplified) markers.push(makeVertexMarker(L.latLng(lat, lng)));
+      syncPoints();
+      closedRing = true;
+      clearCity();   // it's a drawn boundary now — drop areaId/cityRing so import uses the polygon
+      hint('Outline is editable: drag points outward (or click an edge to add one, right-click a point to remove), then “Finish boundary & import”. It now pulls across city lines.');
+    }
+    $('miEditOutline').addEventListener('click', editCityOutline);
+
     map.on('click', e => {
-      if (!subdividing) clearCity();  // drawing overrides a chosen city (but not while subdividing)
-      points.push(e.latlng);
-      markers.push(L.circleMarker(e.latlng, { radius: 4, color: '#ff8a3d' }).addTo(map));
-      line.setLatLngs(points.concat(points.length > 2 ? [points[0]] : []));
+      if (closedRing) {                                  // editing a ring: insert on the nearest edge
+        const ring = points.map(p => [p.lng, p.lat]);
+        addVertexAt(e.latlng, nearestEdgeInsertIndex(ring, [e.latlng.lng, e.latlng.lat]));
+      } else {
+        if (!subdividing) clearCity();                   // drawing overrides a chosen city (but not while subdividing)
+        addVertexAt(e.latlng, null);                     // append
+      }
     });
 
     $('miClear').addEventListener('click', () => {
@@ -589,7 +668,8 @@ export function openMapImporter({ onSaved } = {}) {
       map.fitBounds(cityLayer.getBounds());
       if (!$('miName').value.trim()) $('miName').value = result.name || (result.display_name || '').split(',')[0];
       $('miCityResults').innerHTML = '';
-      hint(`Boundary set to “${(result.display_name || '').split(',').slice(0, 2).join(',')}”. Press “Finish boundary & import”.`);
+      $('miEditOutline').style.display = '';
+      hint(`Boundary set to “${(result.display_name || '').split(',').slice(0, 2).join(',')}”. Press “Finish boundary & import”, or “✎ Edit outline” to extend past the city line.`);
     }
 
     async function doCitySearch() {
@@ -663,6 +743,7 @@ export function openMapImporter({ onSaved } = {}) {
       const wantBlocks = $('miBlocks').checked;
       hint(areaId ? 'Fetching the whole city from OpenStreetMap… (can take a while)' : 'Fetching streets from OpenStreetMap…');
       $('miFinish').disabled = true;
+      $('miEditOutline').style.display = 'none';
       try {
         const json = await fetchOverpass(areaId ? overpassAreaQuery(areaId) : overpassQuery(points));
         cityJson = json;
